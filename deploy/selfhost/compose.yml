@@ -1,0 +1,57 @@
+services:
+  server:
+    build:
+      context: ../..
+      dockerfile: deploy/selfhost/server.Dockerfile
+    environment:
+      LINJIAN_TOKEN: ${LINJIAN_TOKEN:?Set LINJIAN_TOKEN in deploy/selfhost/.env}
+      LINJIAN_HOST: 0.0.0.0
+      LINJIAN_PORT: 8513
+      LINJIAN_DATA_DIR: /data
+      LINJIAN_KEEP: 3
+      LINJIAN_DEFAULT_DEVICE: android-phone
+      LINJIAN_PUBLIC_URL: https://${LINJIAN_DOMAIN:?Set LINJIAN_DOMAIN in deploy/selfhost/.env}
+    volumes:
+      - linjian_data:/data
+    expose:
+      - "8513"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8513/health', timeout=5)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - backend
+
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      LINJIAN_DOMAIN: ${LINJIAN_DOMAIN:?Set LINJIAN_DOMAIN in deploy/selfhost/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    networks:
+      - backend
+
+networks:
+  backend:
+
+volumes:
+  linjian_data:
+  caddy_data:
+  caddy_config:
