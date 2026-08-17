@@ -67,6 +67,7 @@ public class CalendarState {
             o.put("theme_color", THEME_COLOR);
             o.put("default_remind_days_before", DEFAULT_REMIND_DAYS);
             o.put("event_count", events(ctx).length());
+            o.put("events", events(ctx));
             o.put("nearest", nearest);
             o.put("active_banners", banners);
             o.put("summary", summaryLine(ctx));
