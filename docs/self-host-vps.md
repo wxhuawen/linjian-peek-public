@@ -11,9 +11,9 @@ Android / existing MCP
           |
           | HTTPS (80/443)
           v
-        Caddy
+  Existing host Caddy
           |
-          | Docker network only (8513)
+          | loopback only (127.0.0.1:8513)
           v
     linjian_server.py
           |
@@ -21,13 +21,15 @@ Android / existing MCP
    Docker volume (/data)
 ```
 
-Port 8513 is exposed only to the Docker network; it is not published on the
-host. Caddy obtains and renews the HTTPS certificate automatically. No request
-body limit is added, so screenshot uploads are not constrained by this config.
+Port 8513 is published only on the host loopback interface; it is not reachable
+from the public network. The existing host Caddy obtains and renews the HTTPS
+certificate automatically. No request body limit is added, so screenshot
+uploads are not constrained by this config.
 
 ## Prerequisites
 
 - A Linux VPS with Docker Engine and Docker Compose v2
+- An existing host Caddy service managing ports 80 and 443
 - A DNS record for the selected subdomain pointing to the VPS public IP
 - Inbound TCP ports 80 and 443 open (and UDP 443 if HTTP/3 is desired)
 - An existing SSH administration path
@@ -64,14 +66,14 @@ Edit `.env` on the VPS and set:
 Never paste the token into Git, shell history, deployment logs, or chat. Do not
 change the token as part of this migration.
 
-## 3. Validate and start the stack
+## 3. Validate and start the server
 
 Run these commands from `deploy/selfhost`:
 
 ```bash
 docker compose config --quiet
 docker compose build server
-docker compose up -d
+docker compose up -d server
 docker compose ps
 ```
 
@@ -82,13 +84,39 @@ because it can display the token.
 For status checks, prefer:
 
 ```bash
-docker compose logs --tail=100 server caddy
+docker compose logs --tail=100 server
 ```
 
 Review logs before sharing them and redact credentials, URLs, device data, and
 phone content.
 
-## 4. Verify the new server
+Verify the loopback-only health endpoint before changing Caddy:
+
+```bash
+curl --fail --silent --show-error http://127.0.0.1:8513/health
+```
+
+## 4. Add the site to the existing Caddy service
+
+The tracked `Caddyfile` is a template. Replace `{$LINJIAN_DOMAIN}` with the
+hostname from `.env` only in the VPS Caddy configuration; do not commit the
+rendered hostname.
+
+Before editing, back up the existing host configuration. Add the rendered site
+block without changing existing sites, then validate the complete configuration
+before reloading Caddy:
+
+```bash
+cp -a /etc/caddy/Caddyfile /etc/caddy/Caddyfile.pre-linjian
+caddy validate --config /etc/caddy/Caddyfile
+systemctl reload caddy
+systemctl is-active caddy
+```
+
+If validation fails, do not reload. Restore the backup and investigate the
+reported line. A reload keeps existing connections and sites in place.
+
+## 5. Verify the new server
 
 First verify the public health endpoint:
 
@@ -101,7 +129,7 @@ echo the token. Do not use verbose HTTP output or include the token directly in
 the command line. Confirm only the HTTP result and expected response shape; do
 not print phone content or event details.
 
-## 5. Cut over in this order
+## 6. Cut over in this order
 
 1. Change only the existing Render MCP service's `LINJIAN_URL` to the new HTTPS
    origin. Keep `LINJIAN_TOKEN` unchanged and do not deploy a new public MCP.
