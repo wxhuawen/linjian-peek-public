@@ -11,12 +11,17 @@ import java.util.Map;
 
 public class AppPrefs {
     public static final String PREFS = "linjian_peek";
-    public static final String APP_VERSION_NAME = "0.3.6.4";
-    public static final int APP_VERSION_CODE = 30604;
+    public static final String APP_VERSION_NAME = "0.3.7";
+    public static final int APP_VERSION_CODE = 30700;
     public static final String KEY_SERVER = "server_url";
     public static final String KEY_TOKEN = "token";
     public static final String KEY_DEVICE = "device_id";
     public static final String KEY_INTERVAL = "poll_interval_ms";
+    public static final int DEFAULT_POLL_INTERVAL_MS = 3000;
+    public static final int MIN_POLL_INTERVAL_MS = 2500;
+    public static final int MAX_POLL_INTERVAL_MS = 15000;
+    public static final int STATE_UPLOAD_INTERVAL_MS = 10000;
+    public static final int ACCESSIBILITY_FALLBACK_INTERVAL_MS = 12000;
     public static final String KEY_CITY = "life_city";
     public static final String KEY_WEATHER_NOTE = "life_weather_note";
     public static final String KEY_WEATHER_LOCATIONS = "weather_locations_lines";
@@ -74,7 +79,12 @@ public class AppPrefs {
     public static String server(Context ctx) { return cleanServer(get(ctx).getString(KEY_SERVER, "")); }
     public static String token(Context ctx) { return get(ctx).getString(KEY_TOKEN, ""); }
     public static String device(Context ctx) { return get(ctx).getString(KEY_DEVICE, "android-phone"); }
-    public static int interval(Context ctx) { return Math.max(700, get(ctx).getInt(KEY_INTERVAL, 1500)); }
+    public static int interval(Context ctx) {
+        int saved = get(ctx).getInt(KEY_INTERVAL, DEFAULT_POLL_INTERVAL_MS);
+        if (saved < MIN_POLL_INTERVAL_MS) return DEFAULT_POLL_INTERVAL_MS;
+        if (saved > MAX_POLL_INTERVAL_MS) return MAX_POLL_INTERVAL_MS;
+        return saved;
+    }
 
     /** 把旧公开版称呼和回家模式观察列表迁移到通用模板配置。 */
     public static boolean migrateTemplateConfig(Context ctx) {

@@ -58,10 +58,12 @@ public class LifeState {
             String currentApp = appLabel(ctx, currentPackage);
             boolean usageReady = hasUsagePermission(ctx);
             UsageSummary usage = usageReady ? readUsage(ctx, now) : new UsageSummary();
+            NowState.start(ctx);
+            JSONObject nowState = NowState.collect(ctx);
             SharedPreferencesCompat prefs = new SharedPreferencesCompat(ctx);
 
             state.put("device_id", AppPrefs.device(ctx));
-            state.put("life_state_version", "0.3.6.4");
+            state.put("life_state_version", "0.3.7");
             state.put("local_time", formatLocal(now, "HH:mm"));
             state.put("local_date", formatLocal(now, "yyyy-MM-dd"));
             state.put("timezone", TimeZone.getDefault().getID());
@@ -94,6 +96,8 @@ public class LifeState {
             state.put("cycle_state", CycleState.collect(ctx));
             state.put("calendar_state", CalendarState.collect(ctx));
             state.put("guidian_state", GuidianState.config(ctx));
+            state.put("now_state", nowState);
+            state.put("current_state", nowState);
             state.put("summary", makeSummary(batteryPercent, charging, currentApp, usage.screenTimeMinutes, usage.unlockCount, usageReady));
         } catch (Exception e) {
             try { state.put("error", ScreenshotService.shortMsg(e)); } catch (Exception ignored) { }
@@ -105,7 +109,7 @@ public class LifeState {
         try {
             JSONObject s = collect(ctx);
             StringBuilder sb = new StringBuilder();
-            sb.append("生活状态层 v0.3.6.4\n");
+            sb.append("生活状态层 v0.3.7\n");
             sb.append("时间：").append(s.optString("local_time", "-")).append("  ").append(s.optString("local_date", "-")).append("\n");
             sb.append("电量：").append(s.optInt("battery_percent", -1)).append("%  ").append(s.optBoolean("charging") ? "充电中" : "未充电").append("\n");
             sb.append("网络：").append(s.optString("network_type", "-")).append("  屏幕：").append(s.optBoolean("screen_on") ? "亮" : "灭").append("\n");
@@ -120,6 +124,7 @@ public class LifeState {
             sb.append("\n\n").append(ActiveReminder.pretty(ctx));
             sb.append("\n\n").append(HomeMode.pretty(ctx));
             sb.append("\n\n").append(AppGate.pretty(ctx));
+            sb.append("\n\n").append(NowState.pretty(ctx));
             sb.append("\n\n可打开 App：\n").append(AppPrefs.knownAppsText(ctx));
             sb.append("\n\n").append(CycleState.pretty(ctx));
             sb.append("\n\n").append(CalendarState.pretty(ctx));
@@ -190,18 +195,53 @@ public class LifeState {
             UsageStatsManager usm = (UsageStatsManager) ctx.getSystemService(Context.USAGE_STATS_SERVICE);
             if (usm == null) return summary;
             Calendar cal = Calendar.getInstance();
-            cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0);
+            cal.set(Calendar.HOUR_OF_DAY, 0);
+            cal.set(Calendar.MINUTE, 0);
+            cal.set(Calendar.SECOND, 0);
+            cal.set(Calendar.MILLISECOND, 0);
             long start = cal.getTimeInMillis();
-            List<UsageStats> stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, now);
+
+            java.util.HashMap<String, Long> foregroundStarts = new java.util.HashMap<>();
+            java.util.HashMap<String, Long> foregroundTotals = new java.util.HashMap<>();
+            UsageEvents events = usm.queryEvents(start, now);
+            UsageEvents.Event event = new UsageEvents.Event();
+            while (events != null && events.hasNextEvent()) {
+                events.getNextEvent(event);
+                int type = event.getEventType();
+                String pkg = event.getPackageName();
+                long ts = Math.max(start, Math.min(now, event.getTimeStamp()));
+
+                boolean isUnlock = false;
+                if (Build.VERSION.SDK_INT >= 28) isUnlock = type == UsageEvents.Event.KEYGUARD_HIDDEN || type == UsageEvents.Event.SCREEN_INTERACTIVE;
+                else isUnlock = type == UsageEvents.Event.USER_INTERACTION;
+                if (isUnlock) { summary.unlockCount++; summary.lastUnlockAt = event.getTimeStamp(); }
+
+                if (pkg == null || pkg.trim().isEmpty()) continue;
+                if (isForegroundEvent(type)) {
+                    foregroundStarts.put(pkg, ts);
+                } else if (isBackgroundEvent(type)) {
+                    Long begin = foregroundStarts.remove(pkg);
+                    if (begin != null && ts > begin) {
+                        long old = foregroundTotals.containsKey(pkg) ? foregroundTotals.get(pkg) : 0L;
+                        foregroundTotals.put(pkg, old + (ts - begin));
+                    }
+                }
+            }
+            for (java.util.Map.Entry<String, Long> e : foregroundStarts.entrySet()) {
+                long begin = Math.max(start, e.getValue());
+                if (now > begin) {
+                    long old = foregroundTotals.containsKey(e.getKey()) ? foregroundTotals.get(e.getKey()) : 0L;
+                    foregroundTotals.put(e.getKey(), old + (now - begin));
+                }
+            }
+
             long total = 0;
             List<AppUse> apps = new ArrayList<>();
-            if (stats != null) {
-                for (UsageStats st : stats) {
-                    long fg = st.getTotalTimeInForeground();
-                    if (fg <= 0) continue;
-                    total += fg;
-                    apps.add(new AppUse(appLabel(ctx, st.getPackageName()), st.getPackageName(), fg));
-                }
+            for (java.util.Map.Entry<String, Long> e : foregroundTotals.entrySet()) {
+                long fg = e.getValue() == null ? 0L : e.getValue();
+                if (fg <= 0) continue;
+                total += fg;
+                apps.add(new AppUse(appLabel(ctx, e.getKey()), e.getKey(), fg));
             }
             Collections.sort(apps, new Comparator<AppUse>() { @Override public int compare(AppUse a, AppUse b) { return Long.compare(b.ms, a.ms); } });
             JSONArray arr = new JSONArray();
@@ -213,20 +253,23 @@ public class LifeState {
             }
             summary.screenTimeMinutes = (int) Math.round(total / 60000.0);
             summary.topApps = arr;
-
-            UsageEvents events = usm.queryEvents(start, now);
-            UsageEvents.Event event = new UsageEvents.Event();
-            while (events != null && events.hasNextEvent()) {
-                events.getNextEvent(event);
-                int type = event.getEventType();
-                boolean isUnlock = false;
-                if (Build.VERSION.SDK_INT >= 28) isUnlock = type == UsageEvents.Event.KEYGUARD_HIDDEN || type == UsageEvents.Event.SCREEN_INTERACTIVE;
-                else isUnlock = type == UsageEvents.Event.USER_INTERACTION;
-                if (isUnlock) { summary.unlockCount++; summary.lastUnlockAt = event.getTimeStamp(); }
-            }
         } catch (Exception ignored) { }
         return summary;
     }
+
+    private static boolean isForegroundEvent(int type) {
+        if (type == UsageEvents.Event.MOVE_TO_FOREGROUND) return true;
+        if (Build.VERSION.SDK_INT >= 29 && type == UsageEvents.Event.ACTIVITY_RESUMED) return true;
+        return false;
+    }
+
+    private static boolean isBackgroundEvent(int type) {
+        if (type == UsageEvents.Event.MOVE_TO_BACKGROUND) return true;
+        if (Build.VERSION.SDK_INT >= 29 && (type == UsageEvents.Event.ACTIVITY_PAUSED || type == UsageEvents.Event.ACTIVITY_STOPPED)) return true;
+        return false;
+    }
+
+    public static String appLabelPublic(Context ctx, String pkg) { return appLabel(ctx, pkg); }
 
     private static String appLabel(Context ctx, String pkg) {
         if (pkg == null || pkg.trim().isEmpty()) return "";

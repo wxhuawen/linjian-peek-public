@@ -435,7 +435,8 @@
 
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingBottom="28dp">
 
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/card_bg" android:layout_marginBottom="8dp">
+                <Button android:id="@+id/drawerThemeButton" android:layout_width="match_parent" android:layout_height="30dp" android:text="主题  ›" android:textSize="11sp" android:background="@drawable/pill_soft" android:layout_marginBottom="8dp" />
+                <LinearLayout android:id="@+id/drawerTheme" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/card_bg" android:visibility="gone" android:layout_marginBottom="8dp">
                     <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="主题" android:textStyle="bold" android:textSize="16sp" android:textColor="#FF2D3E39" />
                     <TextView android:id="@+id/themeText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="当前主题：白桃粉" android:textSize="11sp" android:textColor="#FF916E7B" android:layout_marginTop="6dp" android:lineSpacingExtra="4dp" />
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="6dp">
@@ -449,8 +450,6 @@
                         <Button android:id="@+id/themePurpleButton" android:layout_width="0dp" android:layout_height="30dp" android:layout_weight="1" android:text="星云紫" android:textSize="11sp" android:background="@drawable/pill_soft" android:layout_marginLeft="5dp" />
                     </LinearLayout>
                 </LinearLayout>
-
-
 
                 <Button android:id="@+id/drawerGuidianSettingsButton" android:layout_width="match_parent" android:layout_height="30dp" android:text="归电设置  ›" android:textSize="11sp" android:background="@drawable/pill_soft" android:layout_marginBottom="8dp" />
                 <LinearLayout android:id="@+id/drawerGuidianSettings" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/card_bg" android:visibility="gone" android:layout_marginBottom="8dp">
@@ -507,6 +506,13 @@
                     <Button android:id="@+id/toggleButton" android:layout_width="match_parent" android:layout_height="30dp" android:text="启动服务" android:textSize="11sp" android:textColor="#FFFFFFFF" android:background="@drawable/pill_primary" android:layout_marginTop="6dp" />
                 </LinearLayout>
 
+                <Button android:id="@+id/drawerNowStateButton" android:layout_width="match_parent" android:layout_height="30dp" android:text="此刻状态  ›" android:textSize="11sp" android:background="@drawable/pill_soft" android:layout_marginBottom="8dp" />
+                <LinearLayout android:id="@+id/drawerNowState" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/card_bg" android:visibility="gone" android:layout_marginBottom="8dp">
+                    <TextView android:id="@+id/nowStatePermissionText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="此刻状态会展示手机姿态、光线、当前 App 与授权后的定位。" android:textSize="11sp" android:textColor="#FF596D66" android:lineSpacingExtra="3dp" />
+                    <Button android:id="@+id/locationPermissionButton" android:layout_width="match_parent" android:layout_height="30dp" android:text="打开定位权限" android:textSize="11sp" android:background="@drawable/pill_soft" android:layout_marginTop="6dp" />
+                    <Button android:id="@+id/overlayPermissionButton" android:layout_width="match_parent" android:layout_height="30dp" android:text="打开悬浮窗权限" android:textSize="11sp" android:background="@drawable/pill_soft" android:layout_marginTop="6dp" />
+                </LinearLayout>
+
                 <Button android:id="@+id/drawerKnownAppsButton" android:layout_width="match_parent" android:layout_height="30dp" android:text="应用包名管理  ›" android:textSize="11sp" android:background="@drawable/pill_soft" android:layout_marginBottom="8dp" />
                 <LinearLayout android:id="@+id/drawerKnownApps" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/card_bg" android:visibility="gone" android:layout_marginBottom="8dp">
                     <TextView android:id="@+id/knownAppsText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="加载中…" android:textSize="11sp" android:textColor="#FF596D66" android:lineSpacingExtra="3dp" />
@@ -538,7 +544,7 @@
                 <Button android:id="@+id/drawerVersionButton" android:layout_width="match_parent" android:layout_height="30dp" android:text="版本、更新与许可  ›" android:textSize="11sp" android:background="@drawable/pill_soft" android:layout_marginBottom="8dp" />
                 <LinearLayout android:id="@+id/drawerVersion" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/card_bg" android:visibility="gone" android:layout_marginBottom="8dp">
                     <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="公开版更新" android:textStyle="bold" android:textSize="16sp" android:textColor="#FF2D3E39" />
-                    <TextView android:id="@+id/versionStatusText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="当前版本：0.3.6.4（30604）" android:textSize="11sp" android:textColor="#FF596D66" android:layout_marginTop="6dp" android:lineSpacingExtra="3dp" />
+                    <TextView android:id="@+id/versionStatusText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="当前版本：0.3.7（30700）" android:textSize="11sp" android:textColor="#FF596D66" android:layout_marginTop="6dp" android:lineSpacingExtra="3dp" />
                     <TextView android:id="@+id/updateChangelogText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="点击检查更新，可查看更新日志并前往下载最新版。" android:textSize="10sp" android:textColor="#FF7E928C" android:layout_marginTop="6dp" android:lineSpacingExtra="3dp" />
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
                         <Button android:id="@+id/checkUpdateButton" android:layout_width="0dp" android:layout_height="34dp" android:layout_weight="1" android:text="检查更新" android:textSize="11sp" android:background="@drawable/pill_soft" />

@@ -1,15 +1,14 @@
 {
-  "latest_version_name": "0.3.6.4",
-  "latest_version_code": 30604,
-  "apk_url": "https://github.com/linzhi-524/linjian-peek-public/releases/download/v0.3.6.4/Zhangxinchuang-public-v0.3.6.4.apk",
+  "latest_version_name": "0.3.7",
+  "latest_version_code": 30700,
+  "apk_url": "https://github.com/linzhi-524/linjian-peek-public/releases/download/v0.3.7/Zhangxinchuang-public-v0.3.7.apk",
   "sha256": "",
   "required": false,
   "changelog": [
-    "修复 MCP 状态读取容易超时：get_phone_state 现在快速读取服务器缓存，并且活动日志改为异步记录。",
-    "缩短 MCP 后端请求、命令排队和命令状态轮询的默认等待时间，减少单工具超过 20 秒未返回的问题。",
-    "open_app 与门禁类工具增加空参数拦截：缺少 App 名称或包名时直接提示，不再下发 package_empty。",
-    "增加 MCP 侧常用 App 名称映射：小红书、抖音、微信、QQ、QQ音乐可自动补全包名。",
-    "保留守护日历自定义事件保存修复、get_lock_state 等应用门禁旧版工具名兼容。",
-    "清理公开包里的 server/.env 与 __pycache__，固定签名保持不变。"
+    "守护日历支持按稳定事件 ID 编辑和删除，同一天的其他事件不会受到影响。",
+    "新增本机保存的“TA 的日记”，包含纸质日记页、左侧日期抽屉、搜索、封面和备份。",
+    "日记正文默认显示四行摘要，点击对应纸页后展开全文，再次点击可收起。",
+    "MCP 新增守护日历管理与日记本读写、搜索、更新和删除工具。",
+    "固定签名保持不变，支持覆盖安装旧版本。"
   ]
 }

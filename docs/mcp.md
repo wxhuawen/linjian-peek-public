@@ -1,4 +1,4 @@
-# MCP 工具清单（v0.3.6.4-public）
+# MCP 工具清单（v0.3.7-public）
 
 掌心窗 MCP 服务把手机端能力暴露给支持 MCP 的客户端。所有工具都需要你自己的 `LINJIAN_TOKEN`，并且手机端需要保持服务启动。公开版工具只保留通用能力，不包含私人绑定接口、私人 Token、私人服务地址或固定私人关系。
 
@@ -77,6 +77,26 @@ Render 一键部署时，`LINJIAN_URL` 会由 Blueprint 自动引用 server 的�
 
 - `get_guardian_calendar(device_id)`：读取守护日历、最近纪念日、节日、倒数日和横幅提醒状态。
 - `add_guardian_calendar_event(title, date, date_type, repeat_type, group, note, remind_days_before, banner_enabled, device_id, wait_seconds)`：添加或更新重要日期。支持阳历、农历、每年重复、分组、备注和提前提醒。
+- `list_guardian_days(device_id, wait_seconds)`：读取手机本机的完整事件列表和稳定 `id`。
+- `add_guardian_day(...)`：添加事件并返回事件 `id`。
+- `update_guardian_day(id, ...)`：按 `id` 修改事件，不影响同日其他事件。
+- `delete_guardian_day(id, confirm, ...)`：按 `id` 删除。`confirm` 必须为 `true`。如果用户只描述“8 月 23 日的生日”，应先调用 `list_guardian_days` 确认唯一事件，再删除。
+
+## TA 的日记
+
+日记本与正文默认只保存在手机本机，不进入生活状态上传。手机端服务需保持启动，MCP 才能按需读写。
+
+- `create_diary_book(name, subtitle, cover_style, ...)`：创建日记本，成功结果包含 `book_id`。
+- `list_diary_books(...)`：列出本机日记本。
+- `rename_diary_book(book_id, name, subtitle, ...)`：重命名日记本或修改封面小字。
+- `update_diary_book_cover(book_id, cover_style, cover_uri, ...)`：更新封面样式；本机图片通常由用户在 App 内选择。
+- `write_diary_entry(book_id, title, content, mood, tags, date, time_label, ...)`：写入一篇日记，成功结果包含 `entry_id`、`book_id`、标题和日期。
+- `list_diary_entries(book_id, ...)`：按日记本列出日记。
+- `read_diary_entry(entry_id, ...)`：读取一篇完整日记。
+- `search_diary_entries(book_id, keyword, date_from, date_to, tags, ...)`：按标题、正文、标签、心情和日期范围搜索。
+- `update_diary_entry(entry_id, ...)`：只更新传入字段。
+- `delete_diary_entry(entry_id, confirm, ...)`：删除单篇日记，`confirm` 必须为 `true`。
+- `delete_diary_book(book_id, confirm, ...)`：高风险操作，会连同全部纸页删除；必须先向用户二次确认并传 `confirm=true`。
 
 ## 小红书辅助
 
@@ -134,7 +154,7 @@ Render 一键部署时，`LINJIAN_URL` 会由 Blueprint 自动引用 server 的�
 - 自动发送评论、自动点击和输入建议默认手动确认。
 - 公开版不包含私人 Token、私人服务地址、固定私人关系和不可公开的专属接口。
 
-## v0.3.6.4 应用门禁兼容工具名
+## v0.3.6.6 应用门禁兼容工具名
 
 为避免部分 AI 平台读取到 `/health` 动作清单后调用旧动作名时报 `Tool not found`，MCP 额外暴露以下兼容工具：
 

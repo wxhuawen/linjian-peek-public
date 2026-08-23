@@ -40,6 +40,8 @@ public class CompanionService extends Service {
     private String token;
     private Handler pollHandler;
     private HandlerThread pollThread;
+    private long rateLimitedUntilMs = 0L;
+    private static long lastStateUploadMs = 0L;
 
     public static boolean isRunning() { return running; }
     @Override public IBinder onBind(Intent intent) { return null; }
@@ -47,6 +49,7 @@ public class CompanionService extends Service {
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && "STOP".equals(intent.getAction())) { stopSelf(); return START_NOT_STICKY; }
         createNotificationChannel();
+        NowState.start(this);
         startForeground(NOTIFICATION_ID, buildNotification("已启动，等待掌心窗命令"));
         if (intent != null) {
             serverUrl = ScreenshotService.normalizeUrl(intent.getStringExtra("server_url"));
@@ -60,7 +63,7 @@ public class CompanionService extends Service {
             DebugState.append(this, "服务启动失败：服务器地址或 Token 为空");
             stopSelf(); return START_NOT_STICKY;
         }
-        DebugState.append(this, "掌心窗公开版 v0.3.6.4 服务已启动，目标：" + serverUrl);
+        DebugState.append(this, "掌心窗公开版 v0.3.7 服务已启动，目标：" + serverUrl);
         if (!running) { running = true; startPolling(); } else DebugState.append(this, "服务已在运行，继续轮询");
         return START_STICKY;
     }
@@ -75,12 +78,18 @@ public class CompanionService extends Service {
 
     private void pollLoop() {
         if (!running) return;
+        long now = System.currentTimeMillis();
+        long delay = AppPrefs.interval(this);
         try {
-            uploadState(serverUrl, token);
-            String body = pollServer();
-            if (body != null && body.length() > 0) handleCommandBody(this, body, serverUrl, token);
+            uploadStateThrottled(serverUrl, token, this, false);
+            if (rateLimitedUntilMs > now) {
+                delay = Math.max(delay, rateLimitedUntilMs - now);
+            } else {
+                String body = pollServer();
+                if (body != null && body.length() > 0) handleCommandBody(this, body, serverUrl, token);
+            }
         } catch (Exception e) { DebugState.append(this, "轮询异常：" + ScreenshotService.shortMsg(e)); }
-        if (running) pollHandler.postDelayed(this::pollLoop, Math.max(700, AppPrefs.interval(this)));
+        if (running) pollHandler.postDelayed(this::pollLoop, Math.max(AppPrefs.MIN_POLL_INTERVAL_MS, delay));
     }
 
     private String pollServer() throws Exception {
@@ -91,9 +100,23 @@ public class CompanionService extends Service {
             if (code == 200) {
                 if (body.contains("\"command\": null") || body.contains("\"command\":null")) return "";
                 DebugState.append(this, "轮询成功：收到命令包"); return body;
-            } else DebugState.append(this, "轮询失败：HTTP " + code + " " + ScreenshotService.clip(body));
+            } else {
+                if (code == 429) {
+                    long retryMs = parseRetryAfterMs(conn.getHeaderField("Retry-After"));
+                    rateLimitedUntilMs = System.currentTimeMillis() + retryMs;
+                    DebugState.append(this, "轮询限流：HTTP 429，约 " + Math.max(1, retryMs / 1000) + " 秒后重试");
+                } else DebugState.append(this, "轮询失败：HTTP " + code + " " + ScreenshotService.clip(body));
+            }
             return "";
         } finally { conn.disconnect(); }
+    }
+
+    private static long parseRetryAfterMs(String header) {
+        try {
+            if (header == null || header.trim().isEmpty()) return 15000L;
+            long seconds = Long.parseLong(header.trim());
+            return Math.max(5000L, Math.min(60000L, seconds * 1000L));
+        } catch (Exception ignored) { return 15000L; }
     }
 
     public static void handleCommandBody(Context ctx, String body, String serverUrl, String token) {
@@ -146,7 +169,15 @@ public class CompanionService extends Service {
                 boolean ok = rr.optBoolean("ok", false);
                 String result = rr.optString("result", rr.toString());
                 DebugState.append(ctx, "执行守护日历命令 " + action + "：" + result);
-                try { reportCommand(ctx, serverUrl, token, id, ok, result); uploadState(serverUrl, token, ctx); } catch (Exception ignored) { }
+                try { reportCommand(ctx, serverUrl, token, id, ok, result); uploadStateThrottled(serverUrl, token, ctx, false); } catch (Exception ignored) { }
+                return;
+            }
+            if (action.contains("diary")) {
+                JSONObject rr = DiaryState.handleCommand(ctx, cmd);
+                boolean ok = rr.optBoolean("ok", false);
+                String result = rr.optString("result", rr.toString());
+                DebugState.append(ctx, "执行 TA 的日记命令 " + action + "：" + result);
+                try { reportCommand(ctx, serverUrl, token, id, ok, result); } catch (Exception ignored) { }
                 return;
             }
             if ("get_guidian_state".equals(action) || "set_guidian_config".equals(action) || "trigger_guidian".equals(action) || "mark_guidian_returned".equals(action)) {
@@ -154,7 +185,7 @@ public class CompanionService extends Service {
                 boolean ok = rr.optBoolean("ok", false);
                 String result = rr.optString("result", rr.toString());
                 DebugState.append(ctx, "执行归电命令 " + action + "：" + result);
-                try { reportCommand(ctx, serverUrl, token, id, ok, result); uploadState(serverUrl, token, ctx); } catch (Exception ignored) { }
+                try { reportCommand(ctx, serverUrl, token, id, ok, result); uploadStateThrottled(serverUrl, token, ctx, false); } catch (Exception ignored) { }
                 return;
             }
             if ("save_known_app".equals(action)) {
@@ -163,7 +194,7 @@ public class CompanionService extends Service {
                 AppPrefs.saveCustomApp(ctx, alias, p);
                 String result = "saved_known_app:" + alias + "=" + p;
                 DebugState.append(ctx, result);
-                try { reportCommand(ctx, serverUrl, token, id, true, result); uploadState(serverUrl, token, ctx); } catch (Exception ignored) { }
+                try { reportCommand(ctx, serverUrl, token, id, true, result); uploadStateThrottled(serverUrl, token, ctx, false); } catch (Exception ignored) { }
                 return;
             }
             if (isAppGateAction(action)) {
@@ -171,7 +202,7 @@ public class CompanionService extends Service {
                 boolean ok = rr.optBoolean("ok", false);
                 String result = rr.optString("result", rr.toString());
                 DebugState.append(ctx, "执行应用门禁命令 " + action + "：" + result);
-                try { reportCommand(ctx, serverUrl, token, id, ok, result); uploadState(serverUrl, token, ctx); } catch (Exception ignored) { }
+                try { reportCommand(ctx, serverUrl, token, id, ok, result); uploadStateThrottled(serverUrl, token, ctx, false); } catch (Exception ignored) { }
                 return;
             }
             if ("run_sequence".equals(action)) {
@@ -220,7 +251,7 @@ public class CompanionService extends Service {
         boolean ok = one.optBoolean("ok", false);
         String result = one.optString("result", one.toString());
         DebugState.append(ctx, "执行命令 " + action + "：" + result);
-        try { reportCommand(ctx, serverUrl, token, id, ok, result); uploadState(serverUrl, token, ctx); } catch (Exception ignored) { }
+        try { reportCommand(ctx, serverUrl, token, id, ok, result); uploadStateThrottled(serverUrl, token, ctx, false); } catch (Exception ignored) { }
     }
 
     private static JSONObject performAction(Context ctx, String action, String app, String pkg, float x, float y, float x1, float y1, float x2, float y2, long duration, int hour, int minute, String title, String message, boolean vibrate, String serverUrl, String token, boolean skipUi, String targetText, String inputText, String match, int index, boolean append) {
@@ -336,7 +367,7 @@ public class CompanionService extends Service {
             finalReport.put("steps", report);
         } catch (Exception ignored) { }
         DebugState.append(ctx, "动作序列结束：" + (allOk ? "全部成功" : "有步骤失败") + "，执行 " + executed + "/" + count);
-        try { reportCommand(ctx, serverUrl, token, id, allOk, finalReport.toString()); uploadState(serverUrl, token, ctx); } catch (Exception ignored) { }
+        try { reportCommand(ctx, serverUrl, token, id, allOk, finalReport.toString()); uploadStateThrottled(serverUrl, token, ctx, false); } catch (Exception ignored) { }
     }
 
     private static int clampWait(int v) { return Math.max(0, Math.min(5000, v)); }
@@ -434,20 +465,18 @@ public class CompanionService extends Service {
         } catch (Exception e) { DebugState.append(ctx, "远程闹钟异常：" + ScreenshotService.shortMsg(e)); return false; }
     }
 
-    private static void uploadState(String serverUrl, String token, Context ctx) throws Exception {
+    private static void uploadStateThrottled(String serverUrl, String token, Context ctx, boolean force) throws Exception {
+        if (ctx == null) return;
+        long now = System.currentTimeMillis();
+        if (!force && now - lastStateUploadMs < AppPrefs.STATE_UPLOAD_INTERVAL_MS) return;
+        lastStateUploadMs = now;
         JSONObject state = LifeState.collect(ctx);
-        // 归电自动补弹：前台服务每次上传生活状态时都顺手检查一次。
-        // 这样 Android 后台定时睡过头时，只要掌心窗服务醒着，就会补一次到点归电。
+        // 归电自动补弹：随生活状态上传定期检查；已限频，避免公开后端被状态上报打到 429。
         GuidianState.evaluate(ctx, state);
         state = LifeState.collect(ctx);
         postJson(serverUrl + "/api/device/state", token, state);
         ActiveReminder.evaluate(ctx, state);
         HomeMode.evaluate(ctx, state);
-    }
-    private static void uploadState(String serverUrl, String token) throws Exception {
-        Context ctx = ScreenshotService.getInstance();
-        if (ctx == null) return;
-        uploadState(serverUrl, token, ctx);
     }
 
     private static void reportCommand(Context ctx, String serverUrl, String token, String id, boolean ok, String result) throws Exception {

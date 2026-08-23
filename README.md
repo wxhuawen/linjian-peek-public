@@ -1,6 +1,24 @@
-# 掌心窗公开版 v0.3.6.4
+# 掌心窗公开版 v0.3.7
 
-## v0.3.6.4 修复重点
+## v0.3.7 日记与守护日历更新
+
+- 守护日历事件补充稳定 ID，支持在日期详情卡中编辑、确认删除，并兼容没有 ID 的旧数据。
+- MCP 完善 `list_guardian_days`、`add_guardian_day`、`update_guardian_day`、`delete_guardian_day`。
+- 陪伴页新增本机保存的“TA 的日记”：纸质封面与纸页、左侧日期抽屉、关键词/日期搜索、封面修改和导入导出备份。
+- 日记正文默认仅显示四行摘要；点击对应纸页展开全文，再次点击即可收起，切换纸页时会自动折叠上一篇。
+- “更多”菜单支持手动添加日记；MCP 支持创建、读取、搜索、更新和删除日记本及日记。
+- 固定公开版签名保持不变，可继续覆盖安装旧版本。
+
+## v0.3.6.6 稳定性修复
+
+- 将默认轮询间隔从旧版的 1.5 秒调整为 3 秒，并对过低旧配置自动回到 3 秒，减少多人公开使用时的请求压力。
+- 生活状态上传改为 10 秒限频，不再每轮都向后端上报。
+- 无障碍服务改为兜底轮询：前台服务运行时不重复请求 `/api/poll`，降低系统后台压力，也减少触发 429 的概率。
+- MCP 遇到 429 会返回清晰限流提示；手机端遇到 429 会短暂退避后重试。
+- 无障碍异常提示补充“允许受限设置、关闭电池优化、允许后台运行”等排查步骤。
+
+
+## v0.3.6.6 修复重点
 
 - 修复 MCP 状态读取容易超过 20 秒的问题：`get_phone_state` 改为快速读取服务器缓存，不再被活动日志记录或长轮询拖慢。
 - 缩短 MCP 到后端、命令排队和命令状态查询的默认等待时间，避免 Render 冷启动/网络波动时整条工具链卡死。
@@ -22,7 +40,7 @@
 ## 本版内容
 
 - **今日页**：今日窗语、今日专注、天气、下一件事、手机电量、今日轨迹。
-- **陪伴页**：陪伴对象卡片、最近一句话、陪伴天数、下个纪念日、行动记录、归电入口。
+- **陪伴页**：陪伴对象卡片、最近一句话、陪伴天数、下个纪念日、行动记录、归电入口，以及本机保存的“TA 的日记”。
 - **守护页**：守护日历、目标 App 设置、应用门禁、屏幕休息、提醒、天气、息屏。
 - **设置页**：服务器连接、Token、设备 ID、用户名称、陪伴对象名称、目标 App、权限、主动提醒、周期、主题、调试、版本更新、许可。
 - **MCP**：截图、读屏、点击、输入、通知、天气、日历、归电、门禁、屏幕休息、提醒、到访记录、关心策略等通用工具。
@@ -56,15 +74,15 @@ update.json   版本更新信息
 
 1. 将源码包解压并覆盖到公开仓库根目录，确保 `.github`、`android`、`server`、`mcp` 位于根目录。
 2. 打开 GitHub 仓库 → **Actions** → **Build Android Public APK** → **Run workflow**。
-3. 构建成功后下载 `zhangxinchuang-public-v0.3.6.4-apk` artifact。
+3. 构建成功后下载 `zhangxinchuang-public-v0.3.7-apk` artifact。
 
 构建产物为：
 
 ```text
-android/Zhangxinchuang-public-v0.3.6.4.apk
+android/Zhangxinchuang-public-v0.3.7.apk
 ```
 
-版本名 `0.3.6.4`，版本码 `30604`。
+版本名 `0.3.7`，版本码 `30700`。
 
 ### 固定签名
 
@@ -342,7 +360,8 @@ MCP 详细工具说明见 [docs/mcp.md](docs/mcp.md)。常用工具分组如下�
 - **点击与输入**：`tap_text`、`input_text`、`send_phone_command`、`run_sequence`、`run_preset`。
 - **App 控制**：`open_app`、`phone_home`、`phone_back`、`phone_recents`、`phone_screen_off`、`list_known_apps`、`save_known_app`。
 - **通知与提醒**：`send_notification`、`set_alarm`、`get_weather_state`、`send_weather_notification`。
-- **日历与窗语**：`get_window_whisper`、`set_window_whisper`、`get_guardian_calendar`、`add_guardian_calendar_event`。
+- **日历与窗语**：`get_window_whisper`、`set_window_whisper`、`list_guardian_days`、`add_guardian_day`、`update_guardian_day`、`delete_guardian_day`。
+- **TA 的日记**：创建/重命名日记本，写入、读取、搜索、更新和删除本机日记；正文不默认上传云端。
 - **归电与关心**：`get_guidian_state`、`set_guidian_config`、`trigger_guidian`、`mark_guidian_returned`、`active_care_check`、`care_action`。
 - **门禁/屏幕休息**：`screen_break_app`、`temporary_screen_break_release`、`end_screen_break`、`extend_screen_break`、`get_screen_break_state`、`list_screen_break_apps`、`add_screen_break_app`、`set_screen_break_passphrase`。
 - **到访与活动**：`record_visit`、`get_last_visit`、`get_visit_history`、`get_visit_stats`、`get_activity_events`、`add_activity_event`、`get_companion_actions`。
@@ -359,4 +378,4 @@ MCP 详细工具说明见 [docs/mcp.md](docs/mcp.md)。常用工具分组如下�
 
 许可条款见 [LICENSE](LICENSE)。
 
-> v0.3.6.4 补充：无障碍状态会在从系统设置返回后延迟复查多次，并兼容不同系统写入无障碍组件名的格式差异；如果侧载 APK 被系统拦截，App 会提示去“应用信息 → 允许受限设置”，再回无障碍开启“掌心窗服务”。
+> v0.3.6.6 补充：无障碍状态会在从系统设置返回后延迟复查多次，并兼容不同系统写入无障碍组件名的格式差异；如果侧载 APK 被系统拦截，App 会提示去“应用信息 → 允许受限设置”，再回无障碍开启“掌心窗服务”。
