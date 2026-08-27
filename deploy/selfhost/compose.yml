@@ -10,6 +10,7 @@ services:
       LINJIAN_DATA_DIR: /data
       LINJIAN_KEEP: 3
       LINJIAN_DEFAULT_DEVICE: android-phone
+      LINJIAN_WEARABLE_STALE_AFTER_SECONDS: ${LINJIAN_WEARABLE_STALE_AFTER_SECONDS:-93600}
       LINJIAN_PUBLIC_URL: https://${LINJIAN_DOMAIN:?Set LINJIAN_DOMAIN in deploy/selfhost/.env}
     volumes:
       - linjian_data:/data

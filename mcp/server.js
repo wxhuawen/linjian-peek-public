@@ -155,6 +155,7 @@ const COMPANION_ACTION_META = {
   get_weather_state: ["观察", "查看天气", "为今天的出行准备建议"],
   get_guidian_state: ["观察", "查看归电状态", "确认最近回来与归电节奏"],
   get_senses_state: ["观察", "查看通用状态", "确认生活状态与归电节奏"],
+  get_wearable_state: ["观察", "查看手环状态", "确认步数、心率、睡眠与血氧"],
   get_screen_break_state: ["观察", "查看应用门禁状态", "确认应用门禁与休息状态"],
   get_lock_state: ["观察", "查看应用门禁状态", "确认应用门禁与休息状态"],
   lock_app: ["守护", "开启应用门禁", "让目标 App 暂停一会儿"],
@@ -925,6 +926,17 @@ function makeServer() {
       return textResult({ ...data, mcp_note: "已快速读取服务器缓存状态；如果 state/life_state 为 null，请保持掌心窗前台或允许后台运行后重试。" });
     } catch (error) {
       return textResult({ ok: false, error: "phone_state_fetch_failed", message: "读取手机状态超时或后端暂时不可达；请确认 Render 服务已唤醒、MCP URL/Token 正确、掌心窗允许后台运行。", detail: String(error?.message || error).slice(0, 500) });
+    }
+  });
+
+  server.tool("get_wearable_state", "读取掌心窗云端缓存的可穿戴设备状态：步数、最近心率、昨夜睡眠、最近血氧及各自测量时间。只读，不会连接或控制手环；没有数据返回 null，超过同步时限会明确返回 freshness.stale=true。", { device_id: z.string().default(DEFAULT_DEVICE) }, async ({ device_id = DEFAULT_DEVICE }) => {
+    try {
+      const res = await linjianFetch(`/api/wearable/state?device_id=${encodeURIComponent(device_id)}`, { timeout_ms: QUICK_FETCH_TIMEOUT_MS });
+      const data = await res.json();
+      postCompanionAction("get_wearable_state", { device_id }).catch(() => null);
+      return textResult(data);
+    } catch (error) {
+      return textResult({ ok: false, device_id, error: "wearable_state_fetch_failed", message: "读取手环状态超时或掌心窗后端暂时不可达。", detail: String(error?.message || error).slice(0, 300) });
     }
   });
 

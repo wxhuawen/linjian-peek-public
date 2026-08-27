@@ -21,9 +21,12 @@ from pathlib import Path
 from threading import Lock
 from urllib.parse import parse_qs, urlparse
 
+from wearable_state import WearableStateStore
+
 DEFAULT_PORT = 8513
 DEFAULT_KEEP = 3
 MAX_UPLOAD_BYTES = 24 * 1024 * 1024
+MAX_WEARABLE_STATE_BYTES = 64 * 1024
 VERSION = "0.3.7"
 DEFAULT_DEVICE = os.environ.get("LINJIAN_DEFAULT_DEVICE", "android-phone")
 ACTIVITY_EVENT_LIMIT = 500
@@ -97,6 +100,7 @@ class State:
         self.activity_path = self.data_dir / "activity_events.json"
         self.activity_lock = Lock()
         self.activity_events = self._load_activity_events()
+        self.wearable_store = WearableStateStore(self.data_dir)
 
     def _load_activity_events(self) -> list[dict]:
         try:
@@ -365,6 +369,10 @@ class Handler(BaseHTTPRequestHandler):
             device_id = qs.get("device_id", [DEFAULT_DEVICE])[0] or DEFAULT_DEVICE
             state = self.state.device_states.get(device_id)
             self._json(200, {"ok": True, "device_id": device_id, "state": state, "life_state": state}); return
+        if path == "/api/wearable/state":
+            if not self._require_token(): return
+            device_id = qs.get("device_id", [DEFAULT_DEVICE])[0] or DEFAULT_DEVICE
+            self._json(200, self.state.wearable_store.get(device_id)); return
         if path == "/api/guidian_state":
             if not self._require_token(): return
             device_id = qs.get("device_id", [DEFAULT_DEVICE])[0] or DEFAULT_DEVICE
@@ -439,6 +447,25 @@ class Handler(BaseHTTPRequestHandler):
             if not self._require_token(): return
             data = self._read_json(); device_id = data.get("device_id") or DEFAULT_DEVICE
             data["updated_at"] = now_iso(); self.state.device_states[device_id] = data
+            self._json(200, {"ok": True, "device_id": device_id}); return
+        if path == "/api/wearable/state":
+            if not self._require_token(): return
+            try:
+                content_length = int(self.headers.get("Content-Length", 0) or 0)
+            except (TypeError, ValueError):
+                self._json(400, {"ok": False, "error": "invalid_json_object"}); return
+            if content_length <= 0:
+                self._json(400, {"ok": False, "error": "invalid_json_object"}); return
+            if content_length > MAX_WEARABLE_STATE_BYTES:
+                self._json(413, {"ok": False, "error": ERR_TOO_LARGE}); return
+            try:
+                data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                self._json(400, {"ok": False, "error": "invalid_json_object"}); return
+            if not isinstance(data, dict):
+                self._json(400, {"ok": False, "error": "invalid_json_object"}); return
+            device_id = str(data.get("device_id") or DEFAULT_DEVICE).strip()[:80] or DEFAULT_DEVICE
+            self.state.wearable_store.put(data, device_id, now_iso())
             self._json(200, {"ok": True, "device_id": device_id}); return
         if path == "/api/device/report":
             if not self._require_token(): return

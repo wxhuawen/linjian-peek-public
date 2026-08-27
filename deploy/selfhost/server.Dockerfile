@@ -10,6 +10,7 @@ RUN useradd --create-home --uid 10001 linjian \
     && chown linjian:linjian /data
 
 COPY --chown=linjian:linjian server/linjian_server.py ./linjian_server.py
+COPY --chown=linjian:linjian server/wearable_state.py ./wearable_state.py
 
 USER linjian
 
