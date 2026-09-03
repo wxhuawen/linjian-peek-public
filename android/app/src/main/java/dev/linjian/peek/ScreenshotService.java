@@ -15,6 +15,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
+import android.util.Log;
 import android.view.Display;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -25,10 +26,14 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+
+import javax.net.ssl.SSLHandshakeException;
 
 public class ScreenshotService extends AccessibilityService {
     private static volatile ScreenshotService instance;
@@ -74,12 +79,12 @@ public class ScreenshotService extends AccessibilityService {
                 String url = normalizeUrl(prefs.getString(AppPrefs.KEY_SERVER, ""));
                 String tk = prefs.getString(AppPrefs.KEY_TOKEN, "");
                 boolean userStopped = prefs.getBoolean("user_stopped", true);
-                if (!userStopped && !url.isEmpty() && !tk.isEmpty() && !CompanionService.isRunning()) {
+                if (!userStopped && !url.isEmpty() && !tk.isEmpty() && !CompanionService.hasRecentPollResponse()) {
                     String body = pollServerFromAccessibility(url, tk);
                     if (body != null && body.length() > 0) CompanionService.handleCommandBody(ScreenshotService.this, body, url, tk);
                 }
             } catch (Exception e) {
-                DebugState.append(ScreenshotService.this, "无障碍后台轮询异常：" + shortMsg(e));
+                logNetworkException(ScreenshotService.this, "无障碍后台轮询", e);
             }
             if (backgroundPollHandler != null) {
                 int fallbackDelay = Math.max(AppPrefs.ACCESSIBILITY_FALLBACK_INTERVAL_MS, AppPrefs.interval(ScreenshotService.this) * 4);
@@ -142,11 +147,25 @@ public class ScreenshotService extends AccessibilityService {
     }
 
     private String pollServerFromAccessibility(String serverUrl, String token) throws Exception {
+        try {
+            return pollServerFromAccessibilityOnce(serverUrl, token, false);
+        } catch (SSLHandshakeException first) {
+            try {
+                return pollServerFromAccessibilityOnce(serverUrl, token, true);
+            } catch (Exception retry) {
+                retry.addSuppressed(first);
+                throw retry;
+            }
+        }
+    }
+
+    private String pollServerFromAccessibilityOnce(String serverUrl, String token, boolean closeConnection) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(serverUrl + "/api/poll?device_id=" + java.net.URLEncoder.encode(AppPrefs.device(this), "UTF-8")).openConnection();
         conn.setConnectTimeout(7000);
         conn.setReadTimeout(8000);
         conn.setRequestMethod("GET");
         conn.setRequestProperty("X-Auth-Token", token);
+        if (closeConnection) conn.setRequestProperty("Connection", "close");
         try {
             int code = conn.getResponseCode();
             String body = readBody(conn, code);
@@ -376,4 +395,34 @@ public class ScreenshotService extends AccessibilityService {
     static String readBody(HttpURLConnection conn, int code) { try { InputStream is = code >= 400 ? conn.getErrorStream() : conn.getInputStream(); if (is == null) return ""; ByteArrayOutputStream bos = new ByteArrayOutputStream(); byte[] buf = new byte[1024]; int n; while ((n = is.read(buf)) > 0) bos.write(buf, 0, n); return new String(bos.toByteArray(), "UTF-8"); } catch (Exception e) { return ""; } }
     static String clip(String s) { if (s == null) return ""; s = s.replace('\n', ' ').replace('\r', ' '); return s.length() > 90 ? s.substring(0, 90) + "…" : s; }
     static String shortMsg(Exception e) { String msg = e.getClass().getSimpleName(); if (e.getMessage() != null) msg += ": " + e.getMessage(); return clip(msg); }
+
+    static void logNetworkException(Context ctx, String stage, Throwable error) {
+        DebugState.append(ctx, stage + "异常：" + exceptionChain(error));
+        StringWriter sw = new StringWriter();
+        error.printStackTrace(new PrintWriter(sw));
+        Log.e("LinjianNetwork", stage + "异常\n" + sanitizeDiagnostic(sw.toString()));
+    }
+
+    static String exceptionChain(Throwable error) {
+        StringBuilder out = new StringBuilder();
+        Throwable current = error;
+        int depth = 0;
+        while (current != null && depth < 6) {
+            if (out.length() > 0) out.append(" <- ");
+            out.append(current.getClass().getSimpleName());
+            String message = current.getMessage();
+            if (message != null && !message.trim().isEmpty()) out.append(": ").append(message.trim());
+            current = current.getCause();
+            depth++;
+        }
+        String safe = sanitizeDiagnostic(out.toString()).replace('\n', ' ').replace('\r', ' ');
+        return safe.length() > 600 ? safe.substring(0, 600) + "…" : safe;
+    }
+
+    private static String sanitizeDiagnostic(String value) {
+        if (value == null) return "";
+        return value
+                .replaceAll("(?i)https?://\\S+", "<url>")
+                .replaceAll("(?i)(x-auth-token|authorization|token)\\s*[:=]\\s*[^\\s,;]+", "$1=<redacted>");
+    }
 }

@@ -30,11 +30,18 @@ import java.util.List;
 import java.util.Calendar;
 import java.util.Locale;
 
+import javax.net.ssl.SSLHandshakeException;
+
 public class CompanionService extends Service {
     private static final String CHANNEL_ID = "linjian_peek_service";
     private static final String REMINDER_CHANNEL_ID = "linjian_peek_heads_up_v3";
     private static final int NOTIFICATION_ID = 20260715;
+    private static final int NETWORK_CONNECT_TIMEOUT_MS = 10000;
+    private static final int NETWORK_READ_TIMEOUT_MS = 15000;
+    private static final long POLL_STALE_AFTER_MS = 90000L;
     private static volatile boolean running = false;
+    private static volatile long pollLoopStartedAtMs = 0L;
+    private static volatile long lastPollResponseMs = 0L;
 
     private String serverUrl;
     private String token;
@@ -44,6 +51,11 @@ public class CompanionService extends Service {
     private static long lastStateUploadMs = 0L;
 
     public static boolean isRunning() { return running; }
+    public static boolean hasRecentPollResponse() {
+        if (!running) return false;
+        long reference = lastPollResponseMs > 0L ? lastPollResponseMs : pollLoopStartedAtMs;
+        return reference > 0L && System.currentTimeMillis() - reference <= POLL_STALE_AFTER_MS;
+    }
     @Override public IBinder onBind(Intent intent) { return null; }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -69,6 +81,8 @@ public class CompanionService extends Service {
     }
 
     private void startPolling() {
+        pollLoopStartedAtMs = System.currentTimeMillis();
+        lastPollResponseMs = 0L;
         pollThread = new HandlerThread("LinjianUnifiedPoll");
         pollThread.start();
         pollHandler = new Handler(pollThread.getLooper());
@@ -82,21 +96,42 @@ public class CompanionService extends Service {
         long delay = AppPrefs.interval(this);
         try {
             uploadStateThrottled(serverUrl, token, this, false);
-            if (rateLimitedUntilMs > now) {
-                delay = Math.max(delay, rateLimitedUntilMs - now);
-            } else {
+        } catch (Exception e) {
+            ScreenshotService.logNetworkException(this, "状态上报", e);
+        }
+        if (rateLimitedUntilMs > now) {
+            delay = Math.max(delay, rateLimitedUntilMs - now);
+        } else {
+            try {
                 String body = pollServer();
                 if (body != null && body.length() > 0) handleCommandBody(this, body, serverUrl, token);
+            } catch (Exception e) {
+                ScreenshotService.logNetworkException(this, "命令轮询", e);
             }
-        } catch (Exception e) { DebugState.append(this, "轮询异常：" + ScreenshotService.shortMsg(e)); }
+        }
         if (running) pollHandler.postDelayed(this::pollLoop, Math.max(AppPrefs.MIN_POLL_INTERVAL_MS, delay));
     }
 
     private String pollServer() throws Exception {
+        try {
+            return pollServerOnce(false);
+        } catch (SSLHandshakeException first) {
+            try {
+                return pollServerOnce(true);
+            } catch (Exception retry) {
+                retry.addSuppressed(first);
+                throw retry;
+            }
+        }
+    }
+
+    private String pollServerOnce(boolean closeConnection) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(serverUrl + "/api/poll?device_id=" + java.net.URLEncoder.encode(AppPrefs.device(this), "UTF-8")).openConnection();
-        conn.setConnectTimeout(10000); conn.setReadTimeout(15000); conn.setRequestMethod("GET"); conn.setRequestProperty("X-Auth-Token", token);
+        conn.setConnectTimeout(NETWORK_CONNECT_TIMEOUT_MS); conn.setReadTimeout(NETWORK_READ_TIMEOUT_MS); conn.setRequestMethod("GET"); conn.setRequestProperty("X-Auth-Token", token);
+        if (closeConnection) conn.setRequestProperty("Connection", "close");
         try {
             int code = conn.getResponseCode(); String body = ScreenshotService.readBody(conn, code);
+            lastPollResponseMs = System.currentTimeMillis();
             if (code == 200) {
                 if (body.contains("\"command\": null") || body.contains("\"command\":null")) return "";
                 DebugState.append(this, "轮询成功：收到命令包"); return body;
@@ -501,14 +536,43 @@ public class CompanionService extends Service {
     }
 
     private static String postJson(String urlStr, String token, JSONObject obj) throws Exception {
-        HttpURLConnection conn = (HttpURLConnection)new URL(urlStr).openConnection(); conn.setRequestMethod("POST"); conn.setRequestProperty("Content-Type", "application/json; charset=utf-8"); conn.setRequestProperty("X-Auth-Token", token); conn.setDoOutput(true);
-        byte[] data = obj.toString().getBytes(StandardCharsets.UTF_8); try (OutputStream os = conn.getOutputStream()) { os.write(data); }
-        InputStream is = conn.getResponseCode() >= 400 ? conn.getErrorStream() : conn.getInputStream();
-        ByteArrayOutputStream bos = new ByteArrayOutputStream(); if (is != null) { byte[] buf = new byte[1024]; int n; while ((n = is.read(buf)) > 0) bos.write(buf,0,n); }
-        return new String(bos.toByteArray(), "UTF-8");
+        try {
+            return postJsonOnce(urlStr, token, obj, false);
+        } catch (SSLHandshakeException first) {
+            try {
+                return postJsonOnce(urlStr, token, obj, true);
+            } catch (Exception retry) {
+                retry.addSuppressed(first);
+                throw retry;
+            }
+        }
+    }
+
+    private static String postJsonOnce(String urlStr, String token, JSONObject obj, boolean closeConnection) throws Exception {
+        HttpURLConnection conn = (HttpURLConnection)new URL(urlStr).openConnection();
+        conn.setConnectTimeout(NETWORK_CONNECT_TIMEOUT_MS);
+        conn.setReadTimeout(NETWORK_READ_TIMEOUT_MS);
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        conn.setRequestProperty("X-Auth-Token", token);
+        if (closeConnection) conn.setRequestProperty("Connection", "close");
+        conn.setDoOutput(true);
+        byte[] data = obj.toString().getBytes(StandardCharsets.UTF_8);
+        conn.setFixedLengthStreamingMode(data.length);
+        try {
+            try (OutputStream os = conn.getOutputStream()) { os.write(data); }
+            int code = conn.getResponseCode();
+            InputStream raw = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
+            try (InputStream is = raw; ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+                if (is != null) { byte[] buf = new byte[1024]; int n; while ((n = is.read(buf)) > 0) bos.write(buf,0,n); }
+                return new String(bos.toByteArray(), StandardCharsets.UTF_8);
+            }
+        } finally {
+            conn.disconnect();
+        }
     }
 
     private void createNotificationChannel() { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) { NotificationManager nm = getSystemService(NotificationManager.class); NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "掌心窗", NotificationManager.IMPORTANCE_LOW); channel.setDescription("掌心窗正在等待你授权的截图与手机动作请求"); nm.createNotificationChannel(channel); NotificationChannel reminder = new NotificationChannel(REMINDER_CHANNEL_ID, "掌心窗悬浮横幅提醒", NotificationManager.IMPORTANCE_HIGH); reminder.setDescription("来自掌心窗的悬浮横幅、生活提醒与回家模式"); reminder.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC); reminder.enableVibration(true); nm.createNotificationChannel(reminder); } }
     private Notification buildNotification(String text) { Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this); return builder.setContentTitle("掌心窗运行中").setContentText(text).setSmallIcon(android.R.drawable.ic_menu_view).setOngoing(true).build(); }
-    @Override public void onDestroy() { running = false; DebugState.append(this, "服务已销毁/停止"); if (pollThread != null) pollThread.quitSafely(); super.onDestroy(); }
+    @Override public void onDestroy() { running = false; pollLoopStartedAtMs = 0L; lastPollResponseMs = 0L; DebugState.append(this, "服务已销毁/停止"); if (pollThread != null) pollThread.quitSafely(); super.onDestroy(); }
 }
