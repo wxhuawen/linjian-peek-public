@@ -1,9 +1,9 @@
 {
   "name": "linjian-unified-mcp",
-  "version": "0.3.7",
+  "version": "0.3.7-7",
   "private": true,
   "type": "module",
-  "description": "Public MCP server for 掌心窗: screenshot, guard tools, configurable app control, active care, and visit timestamps.",
+  "description": "Public MCP server for 掌心窗: screenshot, guard tools, configurable app control, active care, visits, and wallet approvals.",
   "scripts": {
     "start": "node server.js"
   },

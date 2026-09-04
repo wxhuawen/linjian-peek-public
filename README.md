@@ -1,11 +1,103 @@
-# 掌心窗公开版 v0.3.7
+# 掌心窗公开版 v0.3.8.5
 
-## v0.3.7 日记与守护日历更新
+## v0.3.8.5 轻量前台状态
+
+- 基于作者 v0.3.8.4，新增 `get_phone_state_lite`，用于高频读取当前前台 App、亮屏状态和精简可见文字。
+- lite 状态由服务端独立缓存并直接返回，不构造完整生活状态响应；原 `get_phone_state` 保持兼容。
+- 无障碍断开、页面与包名不一致或快照不同步时不返回旧页面文字。
+
+## v0.3.8.4 日记写入兜底修复
+
+- 修复部分用户更新后“机能写日记正文，但保存时报日记本 id 对不上”的问题。
+- `write_diary_entry` 现在支持 `book_id` 留空，旧 ID 对不上时会按 `book_name` 或唯一日记本兜底。
+- 如果没有日记本，会自动创建默认「TA 的日记」再写入；如果有多本且无法判断，会返回候选项，不会乱写。
+- 其它模块不改动：专注模式、应用门禁、小金库、外卖助手和守护日历保持 v0.3.8.2 行为。
+
+## v0.3.8.4 守护页入口补丁
+
+- 修复普通用户在 App 前台找不到「专注模式」的问题。
+- 守护页 → 安心规则新增「专注模式」卡片，位置在「应用门禁」下面。
+- 点击后可查看专注状态、保存默认规则、开启 5 分钟测试；专注中可查看锁定页或结束专注。
+- 继续保留 MCP 远程工具，AI 仍可通过 `start_focus_mode` 等工具开启全机专注。
+
+## v0.3.8.4 专注模式与日记本重命名修复
+
+- 新增 Focus Mode 专注模式：AI 可通过 MCP 开启/结束/查询全机专注。
+- 专注锁定页支持“留言给他”和一次 1 分钟应急放行。
+- MCP `/health` 会显示 `focus_tools: true` 和专注工具清单，方便确认接口真的暴露。
+- 修复 `rename_diary_book`：缺少 `book_id` 时可通过 `old_name` 或唯一日记本自动重命名，减少模型反复调用 `list_diary_books`。
+- Render、Railway、局域网、Cloudflare Worker 相关代码都已随源码同步更新。
+
+
+## v0.3.8.4 MCP 新工具暴露修复
+
+这版修复部分 AI/MCP 客户端出现“后端 health 已经有新工具，但 ChatGPT 工具面板没有暴露双向申请/外卖助手接口”的问题。
+
+- 普通 `/mcp` 提前注册 `wallet_takeout_action` 统一入口，单独工具没刷出时也能通过 `action` 调用。
+- 新增 `/mcp-wallet` 专用端点，只暴露小金库、双向申请和外卖助手工具，减少被客户端工具数量限制截断的概率。
+- `/health` 增加 `mcp_wallet_endpoint`、`schema_exposure_fix`、`priority_tool`、`wallet_takeout_tools`，方便确认部署结果。
+- 原来的 `/mcp`、`/sse` 和手机端功能不变。
+
+## v0.3.8.4 外卖助手与小金库联动
+- 守护页新增「今天吃什么」入口，外卖助手作为单独页面存在，不塞进小金库。
+- 整合私人版外卖助手：单餐预算、今日外卖预算、口味偏好、常点外卖库、记住这道饭、帮我挑、打开链接、复制备注、点到付款页。
+- 外卖助手只帮用户整理、跳转和点到付款前；真正付款必须由用户本人确认。
+- 外卖计划可提交到小金库审批；小金库审批通过后会自动生成一条支出记录，避免“批完还要手动记账”。
+- 审批自动入账使用 approval_id/source_key 去重，重复处理同一申请不会重复计入支出。
+
+## v0.3.8.4 小金库双向审批闭环修复
+
+- 补全陪伴者发起申请、查看结果、用户理由写回的 MCP 闭环，不需要控制用户屏幕。
+- 用户处理陪伴者申请时，点击通过 / 暂缓 / 驳回后会弹出理由输入框，理由会写入审批记录。
+- 普通账单金额不再静默默认为 0；申请标题兼容 `item/title/purpose/content/name/note/reason`。
+- 最近消费卡片支持左滑展开操作，可编辑或删除账单；删除前会二次确认。
+- 新增 `save_user_wallet_request_result`、`edit_wallet_record`、`delete_wallet_record`，保留旧工具兼容。
+
+## v0.3.8.4 双向申请补全
+
+- MCP 新增 `submit_companion_wallet_request`：陪伴者可以主动提交一条申请，等待用户处理。
+- MCP 新增 `list_companion_wallet_requests`：陪伴者可以查看自己提交给用户的申请，以及用户通过、暂缓或驳回后的结果。
+- MCP 新增 `list_wallet_request_results`：按发起方和状态筛选申请记录，方便查看双方处理结果。
+- App 内「审批详情」支持用户处理陪伴者提交的申请：通过、暂缓、驳回。
+- 继续保留 `save_wallet_request_result`，用于更中性地保存处理结果。
+
+
+## v0.3.8.4 反馈修复
+
+- 应用门禁悬浮窗改为全屏触摸拦截兜底：全屏页受系统限制时，悬浮层会挡住下方 App 点击和滑动。
+- 小金库「待审批」统一改为「审批列表」，生活细节摘要改为“待处理/审批记录”，避免把历史记录误认成未处理。
+- 审批列表新增「我的申请」和「陪伴者的申请」分组，支持折叠查看，为双向申请做准备。
+- MCP 增加更中性的 `save_wallet_request_result` 处理结果工具，保留旧工具兼容。
+
+## v0.3.8.4 小金库更新
+- 守护页新增“小金库”：本地记账、预算规则、历史月份侧边栏、待审批详情。
+- 小金库默认保存在手机本地；MCP/AI 只能在用户配置连接后读取预算摘要、最近记录和待审批。
+- 陪伴者名字跟随设置页“陪伴者/AI 名称”，例如会显示“等待陪伴者审批”。
+- 开启通知读取权限后，可在本地识别疑似支付通知并生成待确认账单；不读取支付密码，不接管银行卡。
+
+
+## v0.3.8.4 修复重点
+
+- 修复归电来电页「接通」后没有跳转到归电设置里指定包名的问题：接通后会读取 `guidian_target_package`，关闭来电页后再按包名启动目标 App，失败时写入调试日志并提示原因。
+- 修复陪伴页「xx 的行动」不显示 AI/MCP 工具调用记录的问题：MCP 行动会同步写入统一行动日志，手机端同步时会合并本地与远端行动记录，不再被本地旧记录遮挡。
+- Railway 文档改为手动双服务部署说明，移除 README 中未生成模板码的一键部署引导，避免用户误把 server 域名当成 MCP 域名。
+- 今日页「此刻状态」卡片新增媒体状态：用户开启通知使用权后，可显示正在播放的歌曲/音频标题、歌手、播放状态与来源 App。
+
+## v0.3.8.4 快速修复
+
+- 补充 `server/Dockerfile`、`.dockerignore` 与 `requirements.txt`，避免 Railway 在 server 服务构建阶段无法识别 Python 项目。Railway server 服务现在推荐：Root Directory=`server`，Build Command 留空，Start Command 留空，由 Dockerfile 启动 `python linjian_server.py`。
+
+- 修复网页端 MCP 管理器连接公开版 MCP 时的跨域响应头问题。
+- 设置页「连接设置」会自动保存服务器地址、Token、设备 ID 与轮询间隔，杀掉后台再打开也会保留。
+
+## v0.3.8.4 日记与守护日历更新
 
 - 守护日历事件补充稳定 ID，支持在日期详情卡中编辑、确认删除，并兼容没有 ID 的旧数据。
 - MCP 完善 `list_guardian_days`、`add_guardian_day`、`update_guardian_day`、`delete_guardian_day`。
 - 陪伴页新增本机保存的“TA 的日记”：纸质封面与纸页、左侧日期抽屉、关键词/日期搜索、封面修改和导入导出备份。
 - 日记正文默认仅显示四行摘要；点击对应纸页展开全文，再次点击即可收起，切换纸页时会自动折叠上一篇。
+- 日记封面增加书脊、纸页厚度、书签和立体阴影，书名信息直接居中落在封面上并按屏幕高度调整视觉位置；日记与守护日历二级页改用精简顶部，日历主体适当下移。
+- 日记正文纸张改为浅粉米白渐变，使用淡灰紫横线、粉色页边线和低对比纸纤维，心情以柔和印章显示。
 - “更多”菜单支持手动添加日记；MCP 支持创建、读取、搜索、更新和删除日记本及日记。
 - 固定公开版签名保持不变，可继续覆盖安装旧版本。
 
@@ -31,7 +123,6 @@
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/linzhi-524/linjian-peek-public)
 
-> Railway 一键部署按钮需要先在 Railway 控制台生成 Template Code。生成后，把 `docs/railway-one-click.md` 里的 `YOUR_TEMPLATE_CODE` 替换掉，再把按钮复制到这里即可。
 
 掌心窗公开版是一个可自部署的 Android 陪伴窗：手机端负责展示、截图/读屏、通知、日历、门禁与息屏等本机能力；同步后端负责保存状态和下发指令；MCP 服务负责把这些能力暴露给 AI 客户端使用。
 
@@ -39,7 +130,7 @@
 
 ## 本版内容
 
-- **今日页**：今日窗语、今日专注、天气、下一件事、手机电量、今日轨迹。
+- **今日页**：今日窗语、今日专注、天气、下一件事、手机电量、此刻状态（姿态/光线/当前 App/授权后定位与媒体播放）、今日轨迹。
 - **陪伴页**：陪伴对象卡片、最近一句话、陪伴天数、下个纪念日、行动记录、归电入口，以及本机保存的“TA 的日记”。
 - **守护页**：守护日历、目标 App 设置、应用门禁、屏幕休息、提醒、天气、息屏。
 - **设置页**：服务器连接、Token、设备 ID、用户名称、陪伴对象名称、目标 App、权限、主动提醒、周期、主题、调试、版本更新、许可。
@@ -74,15 +165,15 @@ update.json   版本更新信息
 
 1. 将源码包解压并覆盖到公开仓库根目录，确保 `.github`、`android`、`server`、`mcp` 位于根目录。
 2. 打开 GitHub 仓库 → **Actions** → **Build Android Public APK** → **Run workflow**。
-3. 构建成功后下载 `zhangxinchuang-public-v0.3.7-apk` artifact。
+3. 构建成功后下载 `zhangxinchuang-public-debug-apk` artifact。
 
 构建产物为：
 
 ```text
-android/Zhangxinchuang-public-v0.3.7.apk
+android/Zhangxinchuang-public-v0.3.8.5.apk
 ```
 
-版本名 `0.3.7`，版本码 `30700`。
+版本名 `0.3.8.5`，版本码 `30805`。
 
 ### 固定签名
 
@@ -127,78 +218,9 @@ Blueprint 会自动生成并共享：
 
 验证方式：打开 `zhangxinchuang-mcp` 的 `/health`，如果看到 `fallback_linjian_urls` 里出现 `https://...onrender.com`，说明旧内网地址兼容逻辑已经生效。
 
-## Railway 一键部署
-
-Railway 的一键部署依赖 **Railway Template**。本仓库已经整理好 server 与 MCP 的双服务配置说明；真正的一键按钮需要你先在 Railway 控制台把双服务项目生成为模板，然后得到 Template Code。
-
-模板生成后，把下面链接中的 `YOUR_TEMPLATE_CODE` 替换成真实模板码，再放到 README 顶部即可：
-
-```markdown
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/YOUR_TEMPLATE_CODE?utm_medium=integration&utm_source=button&utm_campaign=zhangxinchuang)
-```
-
-模板内建议使用两个服务：
-
-### server 服务
-
-```text
-Service Name：server
-Root Directory：server
-Build Command：留空或 echo ok
-Start Command：python linjian_server.py
-Healthcheck Path：/health
-Public Networking：开启 HTTP 域名
-```
-
-环境变量：
-
-```env
-LINJIAN_TOKEN=${{ shared.LINJIAN_TOKEN }}
-LINJIAN_HOST=0.0.0.0
-LINJIAN_KEEP=3
-LINJIAN_DEFAULT_DEVICE=${{ shared.LINJIAN_DEFAULT_DEVICE }}
-```
-
-### mcp 服务
-
-```text
-Service Name：mcp
-Root Directory：mcp
-Build Command：npm install
-Start Command：npm start
-Healthcheck Path：/health
-Public Networking：开启 HTTP 域名
-```
-
-环境变量：
-
-```env
-LINJIAN_URL=https://${{ server.RAILWAY_PUBLIC_DOMAIN }}
-LINJIAN_TOKEN=${{ shared.LINJIAN_TOKEN }}
-LINJIAN_DEFAULT_DEVICE=${{ shared.LINJIAN_DEFAULT_DEVICE }}
-```
-
-### Shared Variables
-
-在 Railway Template 中设置共享变量：
-
-```env
-LINJIAN_TOKEN=${{ secret(48) }}
-LINJIAN_DEFAULT_DEVICE=android-phone
-```
-
-部署完成后：
-
-1. 访问 `https://你的-server-域名/health`，确认后端在线。
-2. 访问 `https://你的-mcp-域名/health`，确认 MCP 已连上 server。
-3. Android 设置页填写 server 公网地址、同一个 Token 和设备 ID。
-4. AI/MCP 客户端填写 `https://你的-mcp-域名/mcp` 或 `https://你的-mcp-域名/sse`。
-
-更完整的 Railway 模板按钮配置见 [docs/railway-one-click.md](docs/railway-one-click.md)。手动双服务部署流程见 [docs/setup.md](docs/setup.md)。
-
 ## Railway 手动双服务部署
 
-如果暂时没有 Railway Template Code，也可以手动部署。Railway 建议把后端和 MCP 分成两个服务，它们可以来自同一个 GitHub 仓库，但 Root Directory、启动命令和环境变量不同。
+Railway 请使用手动双服务部署。后端和 MCP 要分成两个服务，它们可以来自同一个 GitHub 仓库，但 Root Directory、启动命令和环境变量不同。
 
 ### 第一步：准备 Token
 
@@ -220,8 +242,9 @@ PY
 ```text
 服务名：server
 Root Directory：server
-Build Command：留空或 echo ok
-Start Command：python linjian_server.py
+Build Command：留空
+Start Command：留空
+Dockerfile Path：Dockerfile
 ```
 
 环境变量：
@@ -233,7 +256,7 @@ LINJIAN_KEEP=3
 LINJIAN_DEFAULT_DEVICE=android-phone
 ```
 
-注意：Railway 会自动提供 `PORT`，不要强行写死 `LINJIAN_PORT`。后端代码会优先读取 Railway 的 `PORT`。
+注意：Railway 会自动提供 `PORT`，不要强行写死 `LINJIAN_PORT`。后端代码会优先读取 Railway 的 `PORT`。server 目录已经内置 `Dockerfile`，Root Directory 设为 `server` 后，Railway 不需要再猜 Python 构建方式。
 
 部署完成后，给 server 服务生成公网域名，访问：
 
@@ -250,8 +273,8 @@ https://你的-server-域名/health
 ```text
 服务名：mcp
 Root Directory：mcp
-Build Command：npm install
-Start Command：npm start
+Build Command：留空
+Start Command：pnpm start
 ```
 
 环境变量：
@@ -270,7 +293,7 @@ LINJIAN_DEFAULT_DEVICE=android-phone
 https://你的-mcp-域名/health
 ```
 
-看到 `ok: true`、`has_url: true`、`has_token: true` 就说明 MCP 可用。
+看到 `ok: true`、`has_url: true`、`has_token: true` 就说明 MCP 可用。注意：AI/MCP 客户端只能填写 MCP 服务域名，不能把 server 域名加 `/mcp` 当作 MCP 地址。
 
 AI/MCP 客户端连接：
 
@@ -376,6 +399,6 @@ MCP 详细工具说明见 [docs/mcp.md](docs/mcp.md)。常用工具分组如下�
 - 自动发送评论、点击按钮、读屏、截图、门禁、息屏等动作建议默认手动确认。
 - 公开版不应写死私人姓名、私人关系、私人服务地址或私人接口。
 
-许可条款见 [LICENSE](LICENSE)。
+许可条款见 [LICENSE](LICENSE)。本项目不是 MIT/Apache/GPL 等开放源代码许可证；源码公开仅用于透明、学习、审计、个人自用部署和个人本地修改。未经项目作者明确书面许可，不得改名/换图标/换署名后重新发布衍生版本，也不得分发重新打包的 APK、镜像、压缩包或托管服务。
 
 > v0.3.6.6 补充：无障碍状态会在从系统设置返回后延迟复查多次，并兼容不同系统写入无障碍组件名的格式差异；如果侧载 APK 被系统拦截，App 会提示去“应用信息 → 允许受限设置”，再回无障碍开启“掌心窗服务”。

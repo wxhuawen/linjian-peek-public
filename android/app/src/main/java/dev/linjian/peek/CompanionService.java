@@ -63,7 +63,7 @@ public class CompanionService extends Service {
             DebugState.append(this, "服务启动失败：服务器地址或 Token 为空");
             stopSelf(); return START_NOT_STICKY;
         }
-        DebugState.append(this, "掌心窗公开版 v0.3.7 服务已启动，目标：" + serverUrl);
+        DebugState.append(this, "掌心窗公开版 v0.3.8.5 服务已启动，目标：" + serverUrl);
         if (!running) { running = true; startPolling(); } else DebugState.append(this, "服务已在运行，继续轮询");
         return START_STICKY;
     }
@@ -197,12 +197,41 @@ public class CompanionService extends Service {
                 try { reportCommand(ctx, serverUrl, token, id, true, result); uploadStateThrottled(serverUrl, token, ctx, false); } catch (Exception ignored) { }
                 return;
             }
+            if (FocusMode.isFocusAction(action)) {
+                Context focusCtx = ScreenshotService.getInstance() != null ? ScreenshotService.getInstance() : ctx;
+                JSONObject rr = FocusMode.handleCommand(focusCtx, cmd);
+                boolean ok = rr.optBoolean("ok", false);
+                String result = rr.optString("result", rr.toString());
+                if (ok && ("start_focus_mode".equals(action) || "enable_focus_mode".equals(action))) {
+                    FocusMode.forceShowLockActivity(focusCtx);
+                }
+                DebugState.append(ctx, "执行专注模式命令 " + action + "：" + result);
+                try { reportCommand(ctx, serverUrl, token, id, ok, result); uploadStateThrottled(serverUrl, token, focusCtx, true); } catch (Exception ignored) { }
+                return;
+            }
             if (isAppGateAction(action)) {
                 JSONObject rr = AppGate.handleCommand(ctx, normalizedGateCommand(cmd));
                 boolean ok = rr.optBoolean("ok", false);
                 String result = rr.optString("result", rr.toString());
                 DebugState.append(ctx, "执行应用门禁命令 " + action + "：" + result);
                 try { reportCommand(ctx, serverUrl, token, id, ok, result); uploadStateThrottled(serverUrl, token, ctx, false); } catch (Exception ignored) { }
+                return;
+            }
+
+            if (isWalletAction(action)) {
+                JSONObject rr = WalletState.handleCommand(ctx, cmd);
+                boolean ok = rr.optBoolean("ok", false);
+                String result = rr.optString("result", rr.toString());
+                DebugState.append(ctx, "执行小金库命令 " + action + "：" + result);
+                try { reportCommand(ctx, serverUrl, token, id, ok, result); uploadStateThrottled(serverUrl, token, ctx, true); } catch (Exception ignored) { }
+                return;
+            }
+            if (isTakeoutAction(action)) {
+                JSONObject rr = TakeoutState.handleCommand(ctx, cmd);
+                boolean ok = rr.optBoolean("ok", false);
+                String result = rr.optString("result", rr.toString());
+                DebugState.append(ctx, "执行外卖小助手命令 " + action + "：" + result);
+                try { reportCommand(ctx, serverUrl, token, id, ok, result); uploadStateThrottled(serverUrl, token, ctx, true); } catch (Exception ignored) { }
                 return;
             }
             if ("run_sequence".equals(action)) {
@@ -238,6 +267,15 @@ public class CompanionService extends Service {
         return "lock_app".equals(action) || "unlock_app".equals(action) || "temporary_unlock_app".equals(action) || "extend_lock".equals(action) || "deny_unlock_request".equals(action) || "get_lock_state".equals(action) || "set_emergency_passphrase".equals(action) || "add_locked_app".equals(action) || "remove_locked_app".equals(action) || "list_lockable_apps".equals(action);
     }
 
+
+    private static boolean isWalletAction(String action) {
+        return "get_wallet_state".equals(action) || "get_wallet_month_state".equals(action) || "list_wallet_months".equals(action) || "add_wallet_record".equals(action) || "list_wallet_pending".equals(action) || "list_wallet_approvals".equals(action) || "list_companion_wallet_requests".equals(action) || "list_wallet_request_results".equals(action) || "submit_wallet_approval".equals(action) || "submit_companion_wallet_request".equals(action) || "decide_wallet_approval".equals(action) || "save_wallet_request_result".equals(action) || "update_wallet_request_result".equals(action) || "save_user_wallet_request_result".equals(action) || "edit_wallet_record".equals(action) || "update_wallet_record".equals(action) || "delete_wallet_record".equals(action) || "remove_wallet_record".equals(action) || "confirm_wallet_record".equals(action) || "get_wallet_rules".equals(action) || "set_wallet_rules".equals(action) || "wallet_approval_request".equals(action);
+    }
+
+    private static boolean isTakeoutAction(String action) {
+        return "get_takeout_state".equals(action) || "list_takeout_cards".equals(action) || "list_takeout_meals".equals(action) || "remember_takeout_meal".equals(action) || "remember_current_takeout_meal".equals(action) || "set_takeout_budget".equals(action) || "set_takeout_preferences".equals(action) || "add_takeout_card".equals(action) || "save_takeout_card".equals(action) || "update_takeout_card".equals(action) || "remove_takeout_card".equals(action) || "delete_takeout_card".equals(action) || "suggest_takeout_options".equals(action) || "create_takeout_plan".equals(action) || "open_takeout_link".equals(action) || "open_takeout_plan".equals(action) || "copy_takeout_note".equals(action) || "record_takeout_order".equals(action) || "takeout_wallet_request".equals(action) || "prepare_takeout_checkout".equals(action) || "auto_takeout_checkout".equals(action) || "get_takeout_checkout_status".equals(action) || "cancel_takeout_checkout".equals(action);
+    }
+
     private static void executeCommand(Context ctx, String id, String action, String app, String pkg, float x, float y, float x1, float y1, float x2, float y2, long duration, int hour, int minute, String title, String message, boolean vibrate, String serverUrl, String token) {
         executeCommand(ctx, id, action, app, pkg, x, y, x1, y1, x2, y2, duration, hour, minute, title, message, vibrate, serverUrl, token, true, "", "", "contains", 1, false);
     }
@@ -261,7 +299,17 @@ public class CompanionService extends Service {
             ScreenshotService svc = ScreenshotService.getInstance();
             if ("wait".equals(action)) { ok = true; result = "wait";
             } else if ("get_life_state".equals(action)) { ok = true; result = LifeState.collect(ctx).toString();
+            } else if (isWalletAction(action)) { JSONObject rr = WalletState.handleCommand(ctx, new JSONObject().put("action", action).put("amount", 0)); ok = rr.optBoolean("ok", false); result = rr.toString();
+            } else if (isTakeoutAction(action)) { JSONObject rr = TakeoutState.handleCommand(ctx, new JSONObject().put("action", action)); ok = rr.optBoolean("ok", false); result = rr.toString();
             } else if ("get_calendar_state".equals(action) || "upsert_calendar_event".equals(action) || "add_calendar_event".equals(action) || "delete_calendar_event".equals(action)) { JSONObject rr = CalendarState.handleCommand(ctx, new JSONObject().put("action", action).put("title", title).put("date", message)); ok = rr.optBoolean("ok", false); result = rr.optString("result", rr.toString());
+            } else if (FocusMode.isFocusAction(action)) {
+                JSONObject focusCmd = new JSONObject().put("action", action).put("app", app).put("package", pkg);
+                if (duration > 0 && duration != 350) focusCmd.put("duration_minutes", Math.max(1, Math.round(duration / 60000.0)));
+                if (message != null && message.trim().length() > 0) focusCmd.put("message", message);
+                if (title != null && title.trim().length() > 0) focusCmd.put("goal", title);
+                Context focusCtx = ScreenshotService.getInstance() != null ? ScreenshotService.getInstance() : ctx;
+                JSONObject rr = FocusMode.handleCommand(focusCtx, focusCmd); ok = rr.optBoolean("ok", false); result = rr.optString("result", rr.toString());
+                if (ok && ("start_focus_mode".equals(action) || "enable_focus_mode".equals(action))) FocusMode.forceShowLockActivity(focusCtx);
             } else if (isAppGateAction(action)) { JSONObject rr = AppGate.handleCommand(ctx, new JSONObject().put("action", normalizeGateAction(action)).put("app", app).put("package", pkg)); ok = rr.optBoolean("ok", false); result = rr.optString("result", rr.toString());
             } else if ("get_screen_nodes".equals(action)) {
                 if (svc != null) { svc.refreshScreenModel(); ok = true; result = svc.getScreenNodesJsonNow(); }
@@ -475,8 +523,26 @@ public class CompanionService extends Service {
         GuidianState.evaluate(ctx, state);
         state = LifeState.collect(ctx);
         postJson(serverUrl + "/api/device/state", token, state);
+        try {
+            postJson(serverUrl + "/api/device/state_lite", token, phoneStateLite(ctx, state));
+        } catch (Exception e) {
+            DebugState.append(ctx, "轻量前台状态上报失败：" + ScreenshotService.shortMsg(e));
+        }
         ActiveReminder.evaluate(ctx, state);
         HomeMode.evaluate(ctx, state);
+    }
+
+    private static JSONObject phoneStateLite(Context ctx, JSONObject state) throws Exception {
+        JSONObject lite = new JSONObject();
+        lite.put("device_id", state.optString("device_id", AppPrefs.device(ctx)));
+        lite.put("updated_at_local", state.optString("updated_at_local", ""));
+        lite.put("updated_at_ms", state.optLong("updated_at_ms", 0));
+        lite.put("current_app", state.optString("current_app", ""));
+        String currentPackage = state.optString("current_package", "");
+        lite.put("current_package", currentPackage);
+        lite.put("screen_on", state.optBoolean("screen_on", false));
+        lite.put("screen_text_lite", ScreenshotService.screenTextLiteForPackage(currentPackage));
+        return lite;
     }
 
     private static void reportCommand(Context ctx, String serverUrl, String token, String id, boolean ok, String result) throws Exception {

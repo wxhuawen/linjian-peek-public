@@ -11,8 +11,8 @@ import java.util.Map;
 
 public class AppPrefs {
     public static final String PREFS = "linjian_peek";
-    public static final String APP_VERSION_NAME = "0.3.7";
-    public static final int APP_VERSION_CODE = 30700;
+    public static final String APP_VERSION_NAME = "0.3.8.5";
+    public static final int APP_VERSION_CODE = 30805;
     public static final String KEY_SERVER = "server_url";
     public static final String KEY_TOKEN = "token";
     public static final String KEY_DEVICE = "device_id";
@@ -76,6 +76,11 @@ public class AppPrefs {
     }
 
     public static boolean migrateLegacyConfig(Context ctx) { return false; }
+    public static String cleanUrl(String raw) { return cleanServer(raw); }
+    public static String[] candidateServers(Context ctx) {
+        String server = server(ctx);
+        return server.length() == 0 ? new String[0] : new String[]{server};
+    }
     public static String server(Context ctx) { return cleanServer(get(ctx).getString(KEY_SERVER, "")); }
     public static String token(Context ctx) { return get(ctx).getString(KEY_TOKEN, ""); }
     public static String device(Context ctx) { return get(ctx).getString(KEY_DEVICE, "android-phone"); }

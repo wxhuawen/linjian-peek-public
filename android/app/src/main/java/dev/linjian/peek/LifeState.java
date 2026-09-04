@@ -60,10 +60,12 @@ public class LifeState {
             UsageSummary usage = usageReady ? readUsage(ctx, now) : new UsageSummary();
             NowState.start(ctx);
             JSONObject nowState = NowState.collect(ctx);
+            JSONObject mediaState = nowState.optJSONObject("media_state");
+            if (mediaState == null) mediaState = MediaState.collect(ctx);
             SharedPreferencesCompat prefs = new SharedPreferencesCompat(ctx);
 
             state.put("device_id", AppPrefs.device(ctx));
-            state.put("life_state_version", "0.3.7");
+            state.put("life_state_version", "0.3.8.5");
             state.put("local_time", formatLocal(now, "HH:mm"));
             state.put("local_date", formatLocal(now, "yyyy-MM-dd"));
             state.put("timezone", TimeZone.getDefault().getID());
@@ -93,9 +95,13 @@ public class LifeState {
             state.put("home_mode", HomeMode.config(ctx));
             state.put("known_apps", AppPrefs.knownAppsJson(ctx));
             state.put("app_gate", AppGate.config(ctx));
+            state.put("focus_mode", FocusMode.config(ctx));
             state.put("cycle_state", CycleState.collect(ctx));
             state.put("calendar_state", CalendarState.collect(ctx));
+            state.put("wallet_state", WalletState.collect(ctx));
+            state.put("takeout_state", TakeoutState.collect(ctx));
             state.put("guidian_state", GuidianState.config(ctx));
+            state.put("media_state", mediaState);
             state.put("now_state", nowState);
             state.put("current_state", nowState);
             state.put("summary", makeSummary(batteryPercent, charging, currentApp, usage.screenTimeMinutes, usage.unlockCount, usageReady));
@@ -109,11 +115,12 @@ public class LifeState {
         try {
             JSONObject s = collect(ctx);
             StringBuilder sb = new StringBuilder();
-            sb.append("生活状态层 v0.3.7\n");
+            sb.append("生活状态层 v0.3.8.5\n");
             sb.append("时间：").append(s.optString("local_time", "-")).append("  ").append(s.optString("local_date", "-")).append("\n");
             sb.append("电量：").append(s.optInt("battery_percent", -1)).append("%  ").append(s.optBoolean("charging") ? "充电中" : "未充电").append("\n");
             sb.append("网络：").append(s.optString("network_type", "-")).append("  屏幕：").append(s.optBoolean("screen_on") ? "亮" : "灭").append("\n");
             sb.append("当前：").append(s.optString("current_app", "-")).append("\n");
+            sb.append(MediaState.pretty(ctx)).append("\n");
             sb.append("屏幕时间：").append(s.optInt("screen_time_today_minutes", 0)).append(" 分钟  解锁：").append(s.optInt("unlock_count_today", 0)).append(" 次\n");
             sb.append("使用权限：").append(s.optBoolean("usage_permission_ready") ? "已开启" : "未开启，屏幕时间/解锁次数会为空").append("\n");
             String city = s.optString("city", "");
@@ -124,10 +131,13 @@ public class LifeState {
             sb.append("\n\n").append(ActiveReminder.pretty(ctx));
             sb.append("\n\n").append(HomeMode.pretty(ctx));
             sb.append("\n\n").append(AppGate.pretty(ctx));
+            sb.append("\n\n").append(FocusMode.pretty(ctx));
             sb.append("\n\n").append(NowState.pretty(ctx));
             sb.append("\n\n可打开 App：\n").append(AppPrefs.knownAppsText(ctx));
             sb.append("\n\n").append(CycleState.pretty(ctx));
             sb.append("\n\n").append(CalendarState.pretty(ctx));
+            try { sb.append("\n\n小金库：").append(WalletState.collect(ctx).optString("summary", "")); } catch (Exception ignored) { }
+            try { sb.append("\n\n外卖小助手：").append(TakeoutState.collect(ctx).optString("summary", "")); } catch (Exception ignored) { }
             return sb.toString();
         } catch (Exception e) { return "生活状态读取失败：" + ScreenshotService.shortMsg(e); }
     }

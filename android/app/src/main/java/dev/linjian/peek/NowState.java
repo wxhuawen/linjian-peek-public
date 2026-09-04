@@ -94,10 +94,13 @@ public class NowState {
             environment.put("updated_at_ms", sensorUpdatedAt);
             out.put("environment", environment);
 
+            JSONObject media = MediaState.collect(ctx);
+            out.put("media_state", media);
+
             JSONObject location = location(ctx);
             out.put("location", location);
             out.put("summary", summary(out));
-            out.put("privacy_note", "此刻状态只在本机授权后读取；定位需要你在系统里单独打开权限。");
+            out.put("privacy_note", "此刻状态只在本机授权后读取；定位和媒体状态需要你在系统里单独打开权限。");
         } catch (Exception e) {
             try { out.put("error", ScreenshotService.shortMsg(e)); } catch (Exception ignored) { }
         }
@@ -110,6 +113,7 @@ public class NowState {
             JSONObject p = s.optJSONObject("posture");
             JSONObject e = s.optJSONObject("environment");
             JSONObject l = s.optJSONObject("location");
+            JSONObject m = s.optJSONObject("media_state");
             StringBuilder sb = new StringBuilder();
             sb.append("此刻状态\n");
             sb.append("当前：").append(s.optString("current_app", "暂未识别")).append("\n");
@@ -117,6 +121,7 @@ public class NowState {
             sb.append("环境：").append(e == null ? "读取中" : e.optString("light_label", "读取中"));
             if (e != null) sb.append(" · ").append(e.optString("proximity_label", ""));
             sb.append("\n");
+            sb.append("媒体：").append(mediaLine(m)).append("\n");
             sb.append("定位：").append(locationLine(l)).append("\n");
             sb.append(s.optString("privacy_note", ""));
             return sb.toString().trim();
@@ -194,10 +199,28 @@ public class NowState {
         JSONObject p = s.optJSONObject("posture");
         JSONObject e = s.optJSONObject("environment");
         JSONObject l = s.optJSONObject("location");
+        JSONObject m = s.optJSONObject("media_state");
         return "此刻状态：" + (p == null ? "姿态读取中" : p.optString("label", "姿态读取中"))
                 + "，正在 " + s.optString("current_app", "暂未识别")
                 + "，" + (e == null ? "环境读取中" : e.optString("light_label", "环境读取中"))
+                + "，媒体 " + mediaLine(m)
                 + "，定位 " + locationLine(l) + "。";
+    }
+
+    private static String mediaLine(JSONObject m) {
+        if (m == null) return "读取中";
+        if (!m.optBoolean("permission_granted", false)) return "未授权";
+        if (!m.optBoolean("available", false)) return m.optString("reason", "暂无播放");
+        String title = m.optString("title", "").trim();
+        String artist = m.optString("artist", "").trim();
+        String app = m.optString("app", "").trim();
+        String state = m.optString("state_label", "").trim();
+        StringBuilder sb = new StringBuilder();
+        sb.append("正在听《").append(title.length() == 0 ? "未知音频" : title).append("》");
+        if (artist.length() > 0) sb.append(" - ").append(artist);
+        if (state.length() > 0) sb.append(" · ").append(state);
+        if (app.length() > 0) sb.append(" · ").append(app);
+        return sb.toString();
     }
 
     private static String locationLine(JSONObject l) {

@@ -40,9 +40,22 @@ public final class CompanionWindowState {
     }
 
     public static JSONArray actions(Context ctx) {
-        JSONArray unified = ActivityEventStore.companionActions(ctx, 500);
-        if (unified.length() > 0) return unified;
-        JSONArray a = cached(ctx).optJSONArray("actions"); return a == null ? new JSONArray() : a;
+        JSONArray merged = new JSONArray();
+        java.util.HashSet<String> seen = new java.util.HashSet<>();
+        appendUnique(merged, seen, ActivityEventStore.companionActions(ctx, 500));
+        appendUnique(merged, seen, cached(ctx).optJSONArray("actions"));
+        return merged;
+    }
+
+    private static void appendUnique(JSONArray out, java.util.HashSet<String> seen, JSONArray items) {
+        if (items == null) return;
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item == null) continue;
+            String id = item.optString("id", "");
+            if (id.isEmpty()) id = item.optString("created_at", item.optString("at", "")) + "|" + item.optString("title", "") + "|" + item.optString("action", "");
+            if (seen.add(id)) out.put(item);
+        }
     }
 
     public static void sync(Context ctx, int limit, Callback callback) {
@@ -50,7 +63,7 @@ public final class CompanionWindowState {
             try {
                 JSONObject state = request(ctx, "GET", "/api/companion/state?limit=" + Math.max(1, Math.min(50, limit)), null);
                 try {
-                    JSONObject events = request(ctx, "GET", "/api/activity/events?device_id=" + AppPrefs.device(ctx) + "&limit=500", null);
+                    JSONObject events = request(ctx, "GET", "/api/activity/events?limit=500", null);
                     ActivityEventStore.mergeRemote(ctx, events.optJSONArray("events"));
                 } catch (Exception ignored) { }
                 AppPrefs.get(ctx).edit().putString(KEY_CACHE, state.toString()).apply();

@@ -1,4 +1,4 @@
-# 掌心窗公开版安装与部署流程（v0.3.7）
+# 掌心窗公开版安装与部署流程（v0.3.8.4）
 
 ## 1. 选择部署方式
 
@@ -11,7 +11,6 @@
 推荐部署方式：
 
 - 想省事：用 Render Blueprint 一键部署。
-- 想做 Railway 一键部署：先按 [railway-one-click.md](railway-one-click.md) 创建 Railway Template，再把按钮放进 README。
 - 想用 Railway 手动部署：server 和 mcp 分成两个 Railway 服务。
 - 只在同一 Wi-Fi 内自用：局域网部署。
 
@@ -30,19 +29,7 @@
 4. MCP 的 `LINJIAN_URL` 会自动引用 server 的公网 `RENDER_EXTERNAL_URL`，Render 一键部署不需要手动填写；旧部署只重新部署 MCP 时，新版 MCP 也会把旧的 Render 内网 `hostport` 自动兜底为公网地址。
 4. MCP 客户端填写 mcp 的 `/mcp` 或 `/sse` 地址。
 
-## 3. Railway 一键部署按钮
-
-Railway 的一键部署按钮需要先创建 Railway Template。创建步骤见 [railway-one-click.md](railway-one-click.md)。
-
-模板按钮格式：
-
-```markdown
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/YOUR_TEMPLATE_CODE?utm_medium=integration&utm_source=button&utm_campaign=zhangxinchuang)
-```
-
-把 `YOUR_TEMPLATE_CODE` 换成你在 Railway 获得的模板码即可。
-
-## 4. Railway 手动双服务部署
+## 3. Railway 手动双服务部署
 
 ### 4.1 生成 Token
 
@@ -60,8 +47,9 @@ Railway 服务设置：
 ```text
 Service Name: server
 Root Directory: server
-Build Command: 留空或 echo ok
-Start Command: python linjian_server.py
+Build Command: 留空
+Start Command: 留空
+Dockerfile Path: Dockerfile
 Healthcheck Path: /health
 ```
 
@@ -83,8 +71,8 @@ Railway 服务设置：
 ```text
 Service Name: mcp
 Root Directory: mcp
-Build Command: npm install
-Start Command: npm start
+Build Command: 留空
+Start Command: pnpm start
 Healthcheck Path: /health
 ```
 
@@ -129,7 +117,7 @@ LINJIAN_DEFAULT_DEVICE=android-phone
 http://192.168.1.23:8513
 ```
 
-### 5.2 启动 MCP
+### 4.2 启动 MCP
 
 ```bash
 cd mcp
@@ -151,7 +139,7 @@ http://127.0.0.1:8787/sse
 构建产物：
 
 ```text
-android/Zhangxinchuang-public-v0.3.7.apk
+android/Zhangxinchuang-public-v0.3.8.4.apk
 ```
 
 公开版使用固定签名 `android/signing/zhangxinchuang-public-release.p12`，不要删除或替换。

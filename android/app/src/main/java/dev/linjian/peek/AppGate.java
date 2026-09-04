@@ -307,14 +307,27 @@ public class AppGate {
                 if (wm == null) { showLockActivity(ctx, pkg); return; }
                 removeOverlay();
 
+                // 悬浮窗兜底必须是「全屏触摸拦截层」，不能只是中间一张卡片。
+                // 这样即使全屏 Activity 被系统限制弹不出来，底下的小红书/抖音也不会继续接到点击和滑动。
                 LinearLayout root = new LinearLayout(app);
                 root.setOrientation(LinearLayout.VERTICAL);
                 root.setGravity(Gravity.CENTER);
                 root.setPadding(dp(ctx, 22), dp(ctx, 22), dp(ctx, 22), dp(ctx, 22));
+                root.setClickable(true);
+                root.setFocusable(true);
+                root.setBackgroundColor(0x88F2EAFB);
+                root.setOnClickListener(v -> { /* 空白遮罩吃掉点击，不关闭也不透传 */ });
+
+                LinearLayout card = new LinearLayout(app);
+                card.setOrientation(LinearLayout.VERTICAL);
+                card.setGravity(Gravity.CENTER);
+                card.setPadding(dp(ctx, 22), dp(ctx, 20), dp(ctx, 22), dp(ctx, 20));
                 GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{0xFFFDF6F8, 0xFFEAF6F1});
                 bg.setCornerRadius(dp(ctx, 24));
                 bg.setStroke(dp(ctx, 1), 0x66B8A8D8);
-                root.setBackground(bg);
+                card.setBackground(bg);
+                card.setClickable(true);
+                card.setOnClickListener(v -> { /* 卡片区域也不向下透传 */ });
 
                 TextView title = new TextView(app);
                 title.setText(lock.optString("app_name", labelOf(ctx, pkg)) + " 已被锁定");
@@ -322,7 +335,7 @@ public class AppGate {
                 title.setTextSize(20);
                 title.setTypeface(Typeface.DEFAULT_BOLD);
                 title.setGravity(Gravity.CENTER);
-                root.addView(title, new LinearLayout.LayoutParams(-1, -2));
+                card.addView(title, new LinearLayout.LayoutParams(-1, -2));
 
                 TextView msg = new TextView(app);
                 String text = lock.optString("message", "先休息一下，等会儿再回来。");
@@ -334,7 +347,7 @@ public class AppGate {
                 msg.setLineSpacing(dp(ctx, 3), 1f);
                 LinearLayout.LayoutParams msgLp = new LinearLayout.LayoutParams(-1, -2);
                 msgLp.topMargin = dp(ctx, 10);
-                root.addView(msg, msgLp);
+                card.addView(msg, msgLp);
 
                 LinearLayout row = new LinearLayout(app);
                 row.setOrientation(LinearLayout.HORIZONTAL);
@@ -354,20 +367,25 @@ public class AppGate {
                     showLockActivity(app, pkg);
                 });
                 row.addView(detail, detailLp);
-                root.addView(row, rowLp);
+                card.addView(row, rowLp);
+
+                LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(
+                        Math.max(dp(ctx, 280), app.getResources().getDisplayMetrics().widthPixels - dp(ctx, 34)),
+                        -2);
+                root.addView(card, cardLp);
 
                 int type = Build.VERSION.SDK_INT >= 26 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
                 WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                         WindowManager.LayoutParams.MATCH_PARENT,
-                        WindowManager.LayoutParams.WRAP_CONTENT,
+                        WindowManager.LayoutParams.MATCH_PARENT,
                         type,
-                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                         PixelFormat.TRANSLUCENT);
                 lp.gravity = Gravity.CENTER;
-                lp.width = Math.max(dp(ctx, 280), app.getResources().getDisplayMetrics().widthPixels - dp(ctx, 34));
                 wm.addView(root, lp);
                 overlayView = root;
                 overlayWindowManager = wm;
+                DebugState.append(app, "门禁悬浮层已启动：touch_blocking=true；目标=" + pkg);
             } catch (Exception e) {
                 DebugState.append(ctx, "门禁悬浮层失败，回退锁定页：" + ScreenshotService.shortMsg(e));
                 showLockActivity(ctx, pkg);

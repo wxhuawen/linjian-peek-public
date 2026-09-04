@@ -14,6 +14,8 @@ import android.graphics.Color;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.graphics.LinearGradient;
+import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.Drawable;
@@ -28,7 +30,9 @@ import android.os.Looper;
 import android.os.PowerManager;
 import android.provider.AlarmClock;
 import android.provider.Settings;
+import android.text.Editable;
 import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -74,7 +78,7 @@ public class MainActivity extends Activity {
     private Button toggleButton, accessibilityButton, usageAccessButton, testButton, openXhsButton, openTargetAppButton, homeButton, backButton, recentsButton, alarmTestButton, notifyTestButton, refreshLifeButton;
     private Button addPackageButton, testPackageButton, sequenceTestButton, refreshGateButton, addGateAppButton, addWeatherLocationButton, setCurrentWeatherButton;
     private Button testGuidianButton, saveGuidianSettingsButton, chooseGuidianAvatarButton, guidianThemeDuskButton, guidianThemeCloudButton, guidianThemeBerryButton;
-    private Button themeCreamButton, themeBlueButton, themePeachButton, themeNightButton, themeMintButton, themePurpleButton, drawerThemeButton, drawerNowStateButton, locationPermissionButton, overlayPermissionButton;
+    private Button themeCreamButton, themeBlueButton, themePeachButton, themeNightButton, themeMintButton, themePurpleButton, drawerThemeButton, drawerNowStateButton, locationPermissionButton, overlayPermissionButton, notificationListenerButton;
     private Button drawerConnectionButton, drawerPermissionButton, drawerControlTestButton, drawerKnownAppsButton, drawerHomeModeButton, drawerGateAddButton, drawerReminderButton, drawerCycleButton, drawerDebugButton, drawerLifeDetailsButton, drawerAppGateButton, drawerWeatherButton, drawerVersionButton, checkUpdateButton, downloadUpdateButton;
     private Button drawerGuidianButton, drawerGuidianSettingsButton, drawerCalendarButton, saveCalendarEventButton;
     private CheckBox remindersEnabled, batteryRuleEnabled, screenRuleEnabled, waterRuleEnabled, restRuleEnabled, cycleEnabled, foregroundPopupEnabled, homeModeEnabled, homeModeForceEnabled, appGateEnabled;
@@ -82,7 +86,7 @@ public class MainActivity extends Activity {
     private Button tabSettings, tabSee, tabControl, tabLife, tabGate, tabDebug;
     private View quickSeeButton, quickGuardButton;
     private View sectionSettings, sectionSee, sectionControl, sectionLife, sectionGate, sectionDebug;
-    private View heroCard, bottomNav;
+    private View heroCard, bottomNav, topHeader;
     private View drawerTheme, drawerNowState, drawerConnection, drawerPermission, drawerControlTest, drawerKnownApps, drawerHomeMode, drawerGateAdd, drawerReminder, drawerCycle, drawerDebug, drawerAppGate, drawerWeather, drawerVersion;
     private View drawerGuidian, drawerGuidianSettings, drawerCalendar;
     private EditText serverUrl, tokenInput, deviceInput, intervalInput, cityInput, weatherInput, userNameInput, companionNameInput;
@@ -131,7 +135,7 @@ public class MainActivity extends Activity {
         loadSettings();
         NowState.start(this);
 
-        DebugState.append(this, "掌心窗公开版 v0.3.7 已打开");
+        DebugState.append(this, "掌心窗公开版 v0.3.8.5 已打开");
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 13);
         serviceRunning = CompanionService.isRunning();
         updateUI();
@@ -140,6 +144,7 @@ public class MainActivity extends Activity {
         if (usageAccessButton != null) usageAccessButton.setOnClickListener(v -> openUsageAccessSettings());
         if (locationPermissionButton != null) locationPermissionButton.setOnClickListener(v -> requestLocationPermission());
         if (overlayPermissionButton != null) overlayPermissionButton.setOnClickListener(v -> openOverlayPermissionSettings());
+        if (notificationListenerButton != null) notificationListenerButton.setOnClickListener(v -> openNotificationListenerSettings());
         if (toggleButton != null) toggleButton.setOnClickListener(v -> { if (serviceRunning) stopCompanionService(); else startCompanionService(); });
         if (refreshLifeButton != null) refreshLifeButton.setOnClickListener(v -> { saveSettings(); updateUI(); Toast.makeText(this, "已刷新生活总览", Toast.LENGTH_SHORT).show(); });
         if (testButton != null) testButton.setOnClickListener(v -> testScreenshot());
@@ -167,6 +172,7 @@ public class MainActivity extends Activity {
         if (userNameInput != null) userNameInput.setOnFocusChangeListener((v, focused) -> { if (!focused) { saveSettings(); buildMagazinePages(); updateUI(); } });
         if (companionNameInput != null) companionNameInput.setOnFocusChangeListener((v, focused) -> { if (!focused) { saveSettings(); buildMagazinePages(); updateUI(); } });
         if (targetAppsInput != null) targetAppsInput.setOnFocusChangeListener((v, focused) -> { if (!focused) { saveSettings(); updateUI(); } });
+        bindConnectionAutoSave();
 
         bindThemeButton(themeCreamButton, "奶油绿"); bindThemeButton(themeBlueButton, "雾蓝白"); bindThemeButton(themePeachButton, "白桃粉"); bindThemeButton(themeNightButton, "夜航黑"); bindThemeButton(themeMintButton, "薄荷透明"); bindThemeButton(themePurpleButton, "星云紫");
 
@@ -205,14 +211,14 @@ public class MainActivity extends Activity {
     }
 
     private void bindViews() {
-        brandText = findViewById(R.id.brandText); headerTitle = findViewById(R.id.headerTitle); headerSubtitle = findViewById(R.id.headerSubtitle); statusText = findViewById(R.id.statusText); debugText = findViewById(R.id.debugText); lifeStatusText = findViewById(R.id.lifeStatusText); lifeSummaryText = findViewById(R.id.lifeSummaryText); knownAppsText = findViewById(R.id.knownAppsText); homeModeStatusText = findViewById(R.id.homeModeStatusText); gateStatusText = findViewById(R.id.gateStatusText); nowStatePermissionText = findViewById(R.id.nowStatePermissionText);
+        topHeader = findViewById(R.id.topHeader); brandText = findViewById(R.id.brandText); headerTitle = findViewById(R.id.headerTitle); headerSubtitle = findViewById(R.id.headerSubtitle); statusText = findViewById(R.id.statusText); debugText = findViewById(R.id.debugText); lifeStatusText = findViewById(R.id.lifeStatusText); lifeSummaryText = findViewById(R.id.lifeSummaryText); knownAppsText = findViewById(R.id.knownAppsText); homeModeStatusText = findViewById(R.id.homeModeStatusText); gateStatusText = findViewById(R.id.gateStatusText); nowStatePermissionText = findViewById(R.id.nowStatePermissionText);
         heroLabelText = findViewById(R.id.heroLabelText); overviewAdviceText = findViewById(R.id.overviewAdviceText); overviewSecondaryText = findViewById(R.id.overviewSecondaryText); overviewMetaText = findViewById(R.id.overviewMetaText); overviewBatteryText = findViewById(R.id.overviewBatteryText); overviewBatteryDetail = findViewById(R.id.overviewBatteryDetail); overviewAppText = findViewById(R.id.overviewAppText); overviewAppDetail = findViewById(R.id.overviewAppDetail); overviewScreenText = findViewById(R.id.overviewScreenText); overviewScreenDetail = findViewById(R.id.overviewScreenDetail); overviewWeatherText = findViewById(R.id.overviewWeatherText); overviewWeatherDetail = findViewById(R.id.overviewWeatherDetail); weatherLocationsText = findViewById(R.id.weatherLocationsText); themeText = findViewById(R.id.themeText); calendarSummaryText = findViewById(R.id.calendarSummaryText); calendarDetailText = findViewById(R.id.calendarDetailText);
         overviewBatteryLabel = findViewById(R.id.overviewBatteryLabel); overviewAppLabel = findViewById(R.id.overviewAppLabel); overviewScreenLabel = findViewById(R.id.overviewScreenLabel); overviewWeatherLabel = findViewById(R.id.overviewWeatherLabel); quickSeeTitle = findViewById(R.id.quickSeeTitle); quickSeeDetail = findViewById(R.id.quickSeeDetail); quickSeeArrow = findViewById(R.id.quickSeeArrow); quickGuardTitle = findViewById(R.id.quickGuardTitle); quickGuardDetail = findViewById(R.id.quickGuardDetail); quickGuardArrow = findViewById(R.id.quickGuardArrow); quickSeeIcon = findViewById(R.id.quickSeeIcon); quickGuardIcon = findViewById(R.id.quickGuardIcon);
         guidianSummaryText = findViewById(R.id.guidianSummaryText); guidianDetailText = findViewById(R.id.guidianDetailText); guidianSettingsStatusText = findViewById(R.id.guidianSettingsStatusText); guidianAvatarText = findViewById(R.id.guidianAvatarText); versionStatusText = findViewById(R.id.versionStatusText); updateChangelogText = findViewById(R.id.updateChangelogText); licenseSummaryText = findViewById(R.id.licenseSummaryText);
         toggleButton = findViewById(R.id.toggleButton); accessibilityButton = findViewById(R.id.accessibilityButton); usageAccessButton = findViewById(R.id.usageAccessButton); testButton = findViewById(R.id.testButton); openXhsButton = findViewById(R.id.openXhsButton); openTargetAppButton = findViewById(R.id.openTargetAppButton); homeButton = findViewById(R.id.homeButton); backButton = findViewById(R.id.backButton); recentsButton = findViewById(R.id.recentsButton); alarmTestButton = findViewById(R.id.alarmTestButton); notifyTestButton = findViewById(R.id.notifyTestButton); refreshLifeButton = findViewById(R.id.refreshLifeButton);
         addPackageButton = findViewById(R.id.addPackageButton); testPackageButton = findViewById(R.id.testPackageButton); sequenceTestButton = findViewById(R.id.sequenceTestButton); refreshGateButton = findViewById(R.id.refreshGateButton); addGateAppButton = findViewById(R.id.addGateAppButton); addWeatherLocationButton = findViewById(R.id.addWeatherLocationButton); setCurrentWeatherButton = findViewById(R.id.setCurrentWeatherButton);
         testGuidianButton = findViewById(R.id.testGuidianButton); saveGuidianSettingsButton = findViewById(R.id.saveGuidianSettingsButton); chooseGuidianAvatarButton = findViewById(R.id.chooseGuidianAvatarButton); guidianThemeDuskButton = findViewById(R.id.guidianThemeDuskButton); guidianThemeCloudButton = findViewById(R.id.guidianThemeCloudButton); guidianThemeBerryButton = findViewById(R.id.guidianThemeBerryButton);
-        themeCreamButton = findViewById(R.id.themeCreamButton); themeBlueButton = findViewById(R.id.themeBlueButton); themePeachButton = findViewById(R.id.themePeachButton); themeNightButton = findViewById(R.id.themeNightButton); themeMintButton = findViewById(R.id.themeMintButton); themePurpleButton = findViewById(R.id.themePurpleButton); drawerThemeButton = findViewById(R.id.drawerThemeButton); drawerNowStateButton = findViewById(R.id.drawerNowStateButton); locationPermissionButton = findViewById(R.id.locationPermissionButton); overlayPermissionButton = findViewById(R.id.overlayPermissionButton);
+        themeCreamButton = findViewById(R.id.themeCreamButton); themeBlueButton = findViewById(R.id.themeBlueButton); themePeachButton = findViewById(R.id.themePeachButton); themeNightButton = findViewById(R.id.themeNightButton); themeMintButton = findViewById(R.id.themeMintButton); themePurpleButton = findViewById(R.id.themePurpleButton); drawerThemeButton = findViewById(R.id.drawerThemeButton); drawerNowStateButton = findViewById(R.id.drawerNowStateButton); locationPermissionButton = findViewById(R.id.locationPermissionButton); overlayPermissionButton = findViewById(R.id.overlayPermissionButton); notificationListenerButton = findViewById(R.id.notificationListenerButton);
         drawerConnectionButton = findViewById(R.id.drawerConnectionButton); drawerPermissionButton = findViewById(R.id.drawerPermissionButton); drawerControlTestButton = findViewById(R.id.drawerControlTestButton); drawerKnownAppsButton = findViewById(R.id.drawerKnownAppsButton); drawerHomeModeButton = findViewById(R.id.drawerHomeModeButton); drawerGateAddButton = findViewById(R.id.drawerGateAddButton); drawerReminderButton = findViewById(R.id.drawerReminderButton); drawerCycleButton = findViewById(R.id.drawerCycleButton); drawerDebugButton = findViewById(R.id.drawerDebugButton); drawerLifeDetailsButton = findViewById(R.id.drawerLifeDetailsButton); drawerAppGateButton = findViewById(R.id.drawerAppGateButton); drawerWeatherButton = findViewById(R.id.drawerWeatherButton); drawerVersionButton = findViewById(R.id.drawerVersionButton); checkUpdateButton = findViewById(R.id.checkUpdateButton); downloadUpdateButton = findViewById(R.id.downloadUpdateButton);
         drawerGuidianButton = findViewById(R.id.drawerGuidianButton); drawerGuidianSettingsButton = findViewById(R.id.drawerGuidianSettingsButton); drawerCalendarButton = findViewById(R.id.drawerCalendarButton); saveCalendarEventButton = findViewById(R.id.saveCalendarEventButton);
         remindersEnabled = findViewById(R.id.remindersEnabled); batteryRuleEnabled = findViewById(R.id.batteryRuleEnabled); screenRuleEnabled = findViewById(R.id.screenRuleEnabled); waterRuleEnabled = findViewById(R.id.waterRuleEnabled); restRuleEnabled = findViewById(R.id.restRuleEnabled); cycleEnabled = findViewById(R.id.cycleEnabled); foregroundPopupEnabled = findViewById(R.id.foregroundPopupEnabled); homeModeEnabled = findViewById(R.id.homeModeEnabled); homeModeForceEnabled = findViewById(R.id.homeModeForceEnabled); appGateEnabled = findViewById(R.id.appGateEnabled);
@@ -630,8 +636,13 @@ public class MainActivity extends Activity {
             FrameLayout cover = buildDiaryCover(book);
             cover.setOnClickListener(v -> playDiaryOpenAnimation(cover));
             cover.setClickable(true); cover.setFocusable(true);
-            LinearLayout coverWrap = new LinearLayout(this); coverWrap.setGravity(Gravity.CENTER); coverWrap.addView(cover, new LinearLayout.LayoutParams(dp(244), dp(350)));
-            root.addView(coverWrap, marginBottom(14));
+            cover.setRotation(-.8f);
+            int coverWidth = Math.min(dp(292), getResources().getDisplayMetrics().widthPixels - dp(46));
+            int coverHeight = Math.round(coverWidth * 1.44f);
+            LinearLayout coverWrap = new LinearLayout(this); coverWrap.setGravity(Gravity.CENTER); coverWrap.setClipChildren(false); coverWrap.addView(cover, new LinearLayout.LayoutParams(coverWidth, coverHeight));
+            int visualCenterSpace = (getResources().getDisplayMetrics().heightPixels - coverHeight - dp(265)) / 2;
+            int coverTopMargin = Math.max(dp(16), Math.min(dp(88), visualCenterSpace));
+            LinearLayout.LayoutParams coverWrapLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); coverWrapLp.topMargin = coverTopMargin; coverWrapLp.bottomMargin = dp(17); root.addView(coverWrap, coverWrapLp);
 
             LinearLayout coverActions = horizontal(); coverActions.setGravity(Gravity.CENTER);
             Button rename = actionButton("修改名字", false); rename.setOnClickListener(v -> showRenameDiaryBookDialog());
@@ -646,24 +657,56 @@ public class MainActivity extends Activity {
 
     private FrameLayout buildDiaryCover(JSONObject book) {
         FrameLayout cover = new FrameLayout(this);
+        cover.setClipChildren(false); cover.setClipToPadding(false);
+
+        FrameLayout pages = new FrameLayout(this);
+        GradientDrawable pageStack = new GradientDrawable();
+        pageStack.setColor(Color.parseColor("#FFF9EF")); pageStack.setCornerRadius(dp(20)); pageStack.setStroke(dp(1), Color.parseColor("#E7D9CC"));
+        pages.setBackground(pageStack); pages.setElevation(dp(3));
+        FrameLayout.LayoutParams pagesLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT); pagesLp.leftMargin = dp(9); pagesLp.topMargin = dp(7); cover.addView(pages, pagesLp);
+        for (int i = 0; i < 3; i++) {
+            View pageLine = new View(this); pageLine.setBackgroundColor(Color.parseColor("#E9DACD"));
+            FrameLayout.LayoutParams lineLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1), Gravity.BOTTOM); lineLp.leftMargin = dp(24); lineLp.rightMargin = dp(7); lineLp.bottomMargin = dp(4 + i * 3); pages.addView(pageLine, lineLp);
+            View sideLine = new View(this); sideLine.setBackgroundColor(Color.parseColor("#E9DACD"));
+            FrameLayout.LayoutParams sideLp = new FrameLayout.LayoutParams(dp(1), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END); sideLp.topMargin = dp(26); sideLp.bottomMargin = dp(19); sideLp.rightMargin = dp(4 + i * 3); pages.addView(sideLine, sideLp);
+        }
+
+        View ribbon = new View(this);
+        GradientDrawable ribbonBg = new GradientDrawable(); ribbonBg.setColor(Color.parseColor("#C9879D")); ribbonBg.setCornerRadius(dp(5)); ribbon.setBackground(ribbonBg); ribbon.setAlpha(.9f);
+        FrameLayout.LayoutParams ribbonLp = new FrameLayout.LayoutParams(dp(15), dp(54), Gravity.END | Gravity.BOTTOM); ribbonLp.rightMargin = dp(58); cover.addView(ribbon, ribbonLp);
+
+        FrameLayout surface = new FrameLayout(this);
         GradientDrawable base = new GradientDrawable();
         base.setColors(new int[]{Color.parseColor("#F4CED9"), Color.parseColor("#E8BFCF")});
         base.setOrientation(GradientDrawable.Orientation.TL_BR);
         base.setCornerRadius(dp(18)); base.setStroke(dp(1), Color.parseColor("#DDAFBE"));
-        cover.setBackground(base); cover.setElevation(dp(8)); cover.setClipToOutline(true);
+        surface.setBackground(base); surface.setElevation(dp(11)); surface.setClipToOutline(true);
+        FrameLayout.LayoutParams surfaceLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT); surfaceLp.rightMargin = dp(9); surfaceLp.bottomMargin = dp(11); cover.addView(surface, surfaceLp);
         String coverUri = book == null ? "" : book.optString("cover_uri", "");
         if (!coverUri.isEmpty()) {
-            try { ImageView image = new ImageView(this); image.setImageURI(Uri.parse(coverUri)); image.setScaleType(ImageView.ScaleType.CENTER_CROP); image.setAlpha(.72f); cover.addView(image, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)); } catch (Exception ignored) { }
+            try { ImageView image = new ImageView(this); image.setImageURI(Uri.parse(coverUri)); image.setScaleType(ImageView.ScaleType.CENTER_CROP); image.setAlpha(.82f); surface.addView(image, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)); } catch (Exception ignored) { }
         }
-        View spine = new View(this); spine.setBackgroundColor(Color.parseColor("#C98FA4")); spine.setAlpha(.28f);
-        FrameLayout.LayoutParams spineLp = new FrameLayout.LayoutParams(dp(14), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START); spineLp.leftMargin = dp(13); cover.addView(spine, spineLp);
-        LinearLayout copy = new LinearLayout(this); copy.setOrientation(LinearLayout.VERTICAL); copy.setGravity(Gravity.CENTER); copy.setPadding(dp(34), dp(40), dp(24), dp(38));
-        TextView tiny = label("PRIVATE NOTEBOOK", 8); tiny.setTextColor(Color.parseColor("#986478")); tiny.setLetterSpacing(.14f); tiny.setGravity(Gravity.CENTER); copy.addView(tiny);
-        TextView name = title(book == null ? "TA 的日记" : book.optString("name", "TA 的日记"), 21); name.setTextColor(Color.parseColor("#684451")); name.setGravity(Gravity.CENTER); name.setLineSpacing(dp(4), 1f); copy.addView(name, matchWrapTop(26));
-        View rule = new View(this); rule.setBackgroundColor(Color.parseColor("#C18A9E")); LinearLayout.LayoutParams ruleLp = new LinearLayout.LayoutParams(dp(84), dp(1)); ruleLp.topMargin = dp(18); ruleLp.gravity = Gravity.CENTER; copy.addView(rule, ruleLp);
-        TextView subtitle = body(book == null ? "把今天轻轻藏起来" : book.optString("subtitle", "把今天轻轻藏起来"), 10); subtitle.setTextColor(Color.parseColor("#835E6B")); subtitle.setGravity(Gravity.CENTER); copy.addView(subtitle, matchWrapTop(14));
-        TextView open = body("轻触翻开", 8); open.setGravity(Gravity.CENTER); open.setTextColor(Color.parseColor("#9C7482")); copy.addView(open, matchWrapTop(42));
-        cover.addView(copy, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        View tint = new View(this); tint.setBackgroundColor(Color.parseColor("#16FFF8F4")); surface.addView(tint, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        View spine = new View(this); spine.setBackgroundColor(Color.parseColor("#B97991")); spine.setAlpha(.3f);
+        FrameLayout.LayoutParams spineLp = new FrameLayout.LayoutParams(dp(29), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START); spineLp.leftMargin = dp(8); surface.addView(spine, spineLp);
+        for (int offset : new int[]{10, 35}) {
+            View groove = new View(this); groove.setBackgroundColor(Color.parseColor("#8F5C70")); groove.setAlpha(.2f);
+            FrameLayout.LayoutParams grooveLp = new FrameLayout.LayoutParams(dp(1), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START); grooveLp.leftMargin = dp(offset); grooveLp.topMargin = dp(14); grooveLp.bottomMargin = dp(14); surface.addView(groove, grooveLp);
+        }
+
+        LinearLayout plate = new LinearLayout(this); plate.setOrientation(LinearLayout.VERTICAL); plate.setGravity(Gravity.CENTER); plate.setPadding(dp(8), dp(8), dp(8), dp(8));
+        TextView tiny = label("PRIVATE NOTEBOOK", 8); tiny.setTextColor(Color.parseColor("#895B6C")); tiny.setLetterSpacing(.14f); tiny.setGravity(Gravity.CENTER); tiny.setShadowLayer(dp(.8f), 0, dp(.5f), Color.parseColor("#99FFF9FC")); plate.addView(tiny);
+        TextView name = title(book == null ? "TA 的日记" : book.optString("name", "TA 的日记"), 21); name.setTextColor(Color.parseColor("#5E3D4A")); name.setGravity(Gravity.CENTER); name.setLineSpacing(dp(4), 1f); name.setShadowLayer(dp(1.1f), 0, dp(.7f), Color.parseColor("#B8FFF9FC")); plate.addView(name, matchWrapTop(13));
+        View rule = new View(this); rule.setBackgroundColor(Color.parseColor("#C18A9E")); LinearLayout.LayoutParams ruleLp = new LinearLayout.LayoutParams(dp(76), dp(1)); ruleLp.topMargin = dp(12); ruleLp.gravity = Gravity.CENTER; plate.addView(rule, ruleLp);
+        TextView subtitle = body(book == null ? "把今天轻轻藏起来" : book.optString("subtitle", "把今天轻轻藏起来"), 9); subtitle.setTextColor(Color.parseColor("#74515F")); subtitle.setGravity(Gravity.CENTER); subtitle.setShadowLayer(dp(.8f), 0, dp(.5f), Color.parseColor("#A8FFF9FC")); plate.addView(subtitle, matchWrapTop(9));
+        int entryCount = DiaryState.listEntries(this, book == null ? "" : book.optString("id", "")).length();
+        String year = new SimpleDateFormat("yyyy", Locale.US).format(new Date());
+        TextView volume = label(year + "  ·  VOL.01  ·  " + entryCount + " 篇", 7); volume.setTextColor(Color.parseColor("#8F6877")); volume.setGravity(Gravity.CENTER); volume.setShadowLayer(dp(.7f), 0, dp(.5f), Color.parseColor("#A8FFF9FC")); plate.addView(volume, matchWrapTop(10));
+        FrameLayout.LayoutParams plateLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER); plateLp.leftMargin = dp(44); plateLp.rightMargin = dp(44); surface.addView(plate, plateLp);
+
+        TextView open = body("轻触翻开", 8); open.setGravity(Gravity.CENTER); open.setTextColor(Color.parseColor("#8E6675"));
+        FrameLayout.LayoutParams openLp = new FrameLayout.LayoutParams(dp(104), dp(30), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL); openLp.bottomMargin = dp(35); surface.addView(open, openLp);
         return cover;
     }
 
@@ -813,11 +856,12 @@ public class MainActivity extends Activity {
         LinearLayout paper = new LinearLayout(this); paper.setTag("diary_paper"); paper.setOrientation(LinearLayout.VERTICAL); paper.setPadding(dp(20), dp(18), dp(20), dp(20)); paper.setBackground(new DiaryPaperDrawable()); paper.setElevation(dp(2));
         String entryId = entry.optString("id", "");
         boolean current = entryId.equals(diaryCurrentEntryId);
-        LinearLayout meta = horizontal(); TextView time = label(entry.optString("time_label", entry.optString("created_at", "").length() >= 16 ? entry.optString("created_at").substring(11, 16) : ""), 8); meta.addView(time, weightedWrap(1f, 0)); TextView mood = label(entry.optString("mood", ""), 8); meta.addView(mood); paper.addView(meta);
-        TextView heading = title(entry.optString("title", "没有标题的一页"), 16); heading.setTypeface(Typeface.create("serif", Typeface.BOLD)); heading.setTextColor(Color.parseColor("#5A4942")); paper.addView(heading, matchWrapTop(10));
-        TextView content = body(entry.optString("content", ""), 11); content.setTypeface(Typeface.create("serif", Typeface.NORMAL)); content.setTextColor(Color.parseColor("#66564E")); content.setLineSpacing(dp(8), 1f); setDiaryEntryExpanded(content, current); paper.addView(content, matchWrapTop(10));
-        String tags = diaryTagsText(entry.optJSONArray("tags")); if (!tags.isEmpty()) { TextView tagView = body(tags, 8); tagView.setTextColor(Color.parseColor("#A1767F")); paper.addView(tagView, matchWrapTop(14)); }
-        TextView expandHint = label(current ? "收起全文  ↑" : "点击展开全文  ↓", 8); expandHint.setTextColor(Color.parseColor("#A1767F")); paper.addView(expandHint, matchWrapTop(11));
+        LinearLayout meta = horizontal(); TextView time = label(entry.optString("time_label", entry.optString("created_at", "").length() >= 16 ? entry.optString("created_at").substring(11, 16) : ""), 8); time.setTextColor(Color.parseColor("#967584")); meta.addView(time, weightedWrap(1f, 0));
+        String moodText = entry.optString("mood", "").trim(); TextView mood = label(moodText, 8); if (moodText.isEmpty()) mood.setVisibility(View.GONE); else { mood.setTextColor(Color.parseColor("#9B6E80")); mood.setPadding(dp(8), dp(2), dp(8), dp(2)); GradientDrawable moodBg = new GradientDrawable(); moodBg.setColor(Color.parseColor("#F7E7ED")); moodBg.setCornerRadius(dp(12)); moodBg.setStroke(dp(1), Color.parseColor("#E8CBD6")); mood.setBackground(moodBg); } meta.addView(mood); paper.addView(meta);
+        TextView heading = title(entry.optString("title", "没有标题的一页"), 16); heading.setTypeface(Typeface.create("serif", Typeface.BOLD)); heading.setTextColor(Color.parseColor("#513E48")); paper.addView(heading, matchWrapTop(10));
+        TextView content = body(entry.optString("content", ""), 11); content.setTypeface(Typeface.create("serif", Typeface.NORMAL)); content.setTextColor(Color.parseColor("#66535C")); content.setLineSpacing(dp(8), 1f); setDiaryEntryExpanded(content, current); paper.addView(content, matchWrapTop(10));
+        String tags = diaryTagsText(entry.optJSONArray("tags")); if (!tags.isEmpty()) { TextView tagView = body(tags, 8); tagView.setTextColor(Color.parseColor("#A47788")); paper.addView(tagView, matchWrapTop(14)); }
+        TextView expandHint = label(current ? "收起全文  ↑" : "点击展开全文  ↓", 8); expandHint.setTextColor(Color.parseColor("#A47788")); paper.addView(expandHint, matchWrapTop(11));
         if (current) { diaryExpandedPaperView = paper; diaryExpandedContentView = content; diaryExpandedHintView = expandHint; }
         paper.setContentDescription(current ? "点击收起这篇日记" : "点击展开这篇日记");
         paper.setOnClickListener(v -> toggleDiaryEntryPaper(paper, content, expandHint, entryId)); paper.setClickable(true); paper.setFocusable(true);
@@ -906,7 +950,7 @@ public class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setPadding(dp(8), 0, dp(8), 0);
         EditText name = new EditText(this); name.setHint("日记本名字"); name.setText(book.optString("name", "")); box.addView(name);
         EditText subtitle = new EditText(this); subtitle.setHint("封面小字"); subtitle.setText(book.optString("subtitle", "")); box.addView(subtitle);
-        new AlertDialog.Builder(this).setTitle("重命名日记本").setView(box).setNegativeButton("取消", null).setPositiveButton("保存", (d, w) -> { DiaryState.renameBook(this, diaryBookId, name.getText().toString(), subtitle.getText().toString()); if (diaryContentOpen) replaceScrollContent(sectionSee, buildDiaryContentPage(null)); else showDiaryHomePage(); }).show();
+        new AlertDialog.Builder(this).setTitle("重命名日记本").setView(box).setNegativeButton("取消", null).setPositiveButton("保存", (d, w) -> { DiaryState.renameBook(this, diaryBookId, book.optString("name", ""), name.getText().toString(), subtitle.getText().toString()); if (diaryContentOpen) replaceScrollContent(sectionSee, buildDiaryContentPage(null)); else showDiaryHomePage(); }).show();
     }
 
     private void showDiaryCoverMenu() {
@@ -939,6 +983,9 @@ public class MainActivity extends Activity {
 
         root.addView(label("安心规则", 9), marginBottom(6));
         root.addView(guardSettingBlock("应用门禁", "需要时轻轻守住", R.drawable.ic_shield, drawerAppGate), marginBottom(7));
+        root.addView(actionSettingBlock("专注模式", "全机专注、应急放行与留言", R.drawable.ic_shield, this::showFocusModePanel), marginBottom(7));
+        root.addView(actionSettingBlock("小金库", "预算、记账与花钱审批", R.drawable.ic_wallet, () -> startActivity(new Intent(this, WalletActivity.class))), marginBottom(7));
+        root.addView(actionSettingBlock("今天吃什么", "常点外卖、预算与小金库联动", R.drawable.ic_wallet, () -> startActivity(new Intent(this, TakeoutActivity.class))), marginBottom(7));
         root.addView(guardSettingBlock("主动提醒", "电量、休息与喝水", R.drawable.ic_clock, drawerReminder), marginBottom(7));
         root.addView(guardSettingBlock("周期提醒", AppPrefs.userName(this) + "的周期与关怀", R.drawable.ic_heart_wave, drawerCycle), marginBottom(11));
 
@@ -965,6 +1012,65 @@ public class MainActivity extends Activity {
         return root;
     }
 
+    private void showFocusModePanel() {
+        try {
+            JSONObject state = FocusMode.config(this);
+            boolean active = state.optBoolean("active", false);
+            String info = FocusMode.pretty(this)
+                    + "\n\n应用门禁只锁指定 App；专注模式是全机专注，适合学习、睡觉或暂时离开手机。"
+                    + "\n\nMCP 工具：get_focus_status / start_focus_mode / end_focus_mode / set_focus_plan / reply_focus_request / approve_focus_unlock / deny_focus_unlock";
+            AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                    .setTitle("专注模式")
+                    .setMessage(info)
+                    .setNegativeButton("关闭", null);
+
+            if (active) {
+                builder.setPositiveButton("查看锁定页", (dialog, which) -> FocusMode.startLockActivity(this));
+                builder.setNeutralButton("结束专注", (dialog, which) -> {
+                    try {
+                        FocusMode.handleCommand(this, new JSONObject().put("action", "end_focus_mode").put("reason", "manual_from_guard_page"));
+                        Toast.makeText(this, "专注模式已结束", Toast.LENGTH_SHORT).show();
+                        updateUI();
+                    } catch (Exception e) {
+                        Toast.makeText(this, "结束失败：" + ScreenshotService.shortMsg(e), Toast.LENGTH_LONG).show();
+                    }
+                });
+            } else {
+                builder.setPositiveButton("测试 5 分钟", (dialog, which) -> {
+                    try {
+                        JSONObject cmd = new JSONObject();
+                        cmd.put("action", "start_focus_mode");
+                        cmd.put("duration_minutes", 5);
+                        cmd.put("goal", "测试专注模式");
+                        cmd.put("message", "这 5 分钟先交给掌心窗守住。需要时可以留言给他，也有 1 次应急放行。");
+                        cmd.put("emergency_total", 1);
+                        cmd.put("emergency_minutes", 1);
+                        FocusMode.handleCommand(this, cmd);
+                        Toast.makeText(this, "已开启 5 分钟专注测试", Toast.LENGTH_SHORT).show();
+                    } catch (Exception e) {
+                        Toast.makeText(this, "开启失败：" + ScreenshotService.shortMsg(e), Toast.LENGTH_LONG).show();
+                    }
+                });
+                builder.setNeutralButton("保存默认规则", (dialog, which) -> {
+                    try {
+                        JSONObject cmd = new JSONObject();
+                        cmd.put("action", "set_focus_plan");
+                        cmd.put("goal", "先离开手机");
+                        cmd.put("message", "你提前把这段时间交给我了，我会帮你守住。");
+                        cmd.put("emergency_total", 1);
+                        cmd.put("emergency_minutes", 1);
+                        FocusMode.handleCommand(this, cmd);
+                        Toast.makeText(this, "专注模式默认规则已保存", Toast.LENGTH_SHORT).show();
+                    } catch (Exception e) {
+                        Toast.makeText(this, "保存失败：" + ScreenshotService.shortMsg(e), Toast.LENGTH_LONG).show();
+                    }
+                });
+            }
+            builder.show();
+        } catch (Exception e) {
+            Toast.makeText(this, "专注模式读取失败：" + ScreenshotService.shortMsg(e), Toast.LENGTH_LONG).show();
+        }
+    }
 
     private void showGuardianCalendarDetailPage() {
         guardianCalendarDetailOpen = true;
@@ -994,7 +1100,7 @@ public class MainActivity extends Activity {
         add.setOnClickListener(v -> showCalendarEventDialog());
         top.addView(add, new LinearLayout.LayoutParams(dp(36), dp(32)));
         root.addView(top, marginBottom(6));
-        root.addView(buildGuardianCalendarPage(), marginBottom(12));
+        LinearLayout.LayoutParams calendarPageLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); calendarPageLp.topMargin = dp(22); calendarPageLp.bottomMargin = dp(12); root.addView(buildGuardianCalendarPage(), calendarPageLp);
         return root;
     }
 
@@ -1267,13 +1373,27 @@ public class MainActivity extends Activity {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         @Override public void draw(Canvas canvas) {
             RectF bounds = new RectF(getBounds());
-            paint.setColor(Color.parseColor("#FFF9EC"));
-            canvas.drawRoundRect(bounds, dp(16), dp(16), paint);
-            paint.setStrokeWidth(dp(.65f)); paint.setColor(Color.parseColor("#E8DDC8")); paint.setAlpha(105);
-            for (float y = bounds.top + dp(47); y < bounds.bottom - dp(13); y += dp(26)) canvas.drawLine(bounds.left + dp(13), y, bounds.right - dp(13), y, paint);
-            paint.setAlpha(32); paint.setColor(Color.parseColor("#A98F77"));
-            for (int i = 0; i < 18; i++) { float x = bounds.left + ((i * 47) % Math.max(1, (int)bounds.width())); float y = bounds.top + ((i * 71) % Math.max(1, (int)bounds.height())); canvas.drawCircle(x, y, dp(.55f), paint); }
-            paint.setAlpha(255);
+            paint.setShader(null); paint.setAlpha(255); paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.parseColor("#F0E3E8")); canvas.drawRoundRect(bounds, dp(17), dp(17), paint);
+
+            RectF page = new RectF(bounds.left, bounds.top, bounds.right - dp(3), bounds.bottom - dp(3));
+            paint.setShader(new LinearGradient(page.left, page.top, page.right, page.bottom,
+                    new int[]{Color.parseColor("#FFFDFB"), Color.parseColor("#FFF8F7"), Color.parseColor("#FAF7FF")},
+                    null, Shader.TileMode.CLAMP));
+            canvas.drawRoundRect(page, dp(16), dp(16), paint); paint.setShader(null);
+
+            paint.setStrokeWidth(dp(.6f)); paint.setColor(Color.parseColor("#E8DCE2")); paint.setAlpha(108);
+            for (float y = page.top + dp(47); y < page.bottom - dp(13); y += dp(26)) canvas.drawLine(page.left + dp(24), y, page.right - dp(13), y, paint);
+            paint.setStrokeWidth(dp(.8f)); paint.setColor(Color.parseColor("#E9C6D2")); paint.setAlpha(88);
+            canvas.drawLine(page.left + dp(17), page.top + dp(14), page.left + dp(17), page.bottom - dp(14), paint);
+
+            paint.setStrokeWidth(dp(.45f)); paint.setColor(Color.parseColor("#D8BDC8")); paint.setAlpha(20);
+            int usableWidth = Math.max(1, (int)page.width() - dp(40)); int usableHeight = Math.max(1, (int)page.height() - dp(30));
+            for (int i = 0; i < 14; i++) {
+                float x = page.left + dp(23) + ((i * 53) % usableWidth); float y = page.top + dp(15) + ((i * 79) % usableHeight);
+                canvas.drawLine(x, y, x + dp(2 + i % 3), y + (i % 2 == 0 ? 0 : dp(.35f)), paint);
+            }
+            paint.setAlpha(255); paint.setShader(null);
         }
         @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); invalidateSelf(); }
         @Override public void setColorFilter(android.graphics.ColorFilter colorFilter) { paint.setColorFilter(colorFilter); invalidateSelf(); }
@@ -1549,6 +1669,31 @@ public class MainActivity extends Activity {
         if (guidianReasonInput != null) guidianReasonInput.setText(prefs.getString(GuidianState.KEY_REASONS, GuidianState.defaultReasons()));
     }
 
+    private void bindConnectionAutoSave() {
+        TextWatcher watcher = new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { saveConnectionSettingsOnly(false); }
+            @Override public void afterTextChanged(Editable s) { }
+        };
+        View.OnFocusChangeListener saveOnBlur = (v, focused) -> { if (!focused) saveConnectionSettingsOnly(true); };
+        if (serverUrl != null) { serverUrl.addTextChangedListener(watcher); serverUrl.setOnFocusChangeListener(saveOnBlur); }
+        if (tokenInput != null) { tokenInput.addTextChangedListener(watcher); tokenInput.setOnFocusChangeListener(saveOnBlur); }
+        if (deviceInput != null) { deviceInput.addTextChangedListener(watcher); deviceInput.setOnFocusChangeListener(saveOnBlur); }
+        if (intervalInput != null) { intervalInput.addTextChangedListener(watcher); intervalInput.setOnFocusChangeListener(saveOnBlur); }
+    }
+
+    private void saveConnectionSettingsOnly(boolean blocking) {
+        SharedPreferences.Editor e = getSharedPreferences(AppPrefs.PREFS, MODE_PRIVATE).edit();
+        if (serverUrl != null) e.putString(AppPrefs.KEY_SERVER, serverUrl.getText().toString().trim());
+        if (tokenInput != null) e.putString(AppPrefs.KEY_TOKEN, tokenInput.getText().toString().trim());
+        if (deviceInput != null) {
+            String device = deviceInput.getText().toString().trim();
+            e.putString(AppPrefs.KEY_DEVICE, device.isEmpty() ? "android-phone" : device);
+        }
+        if (intervalInput != null) e.putInt(AppPrefs.KEY_INTERVAL, parseInterval(intervalInput.getText().toString().trim()));
+        if (blocking) e.commit(); else e.apply();
+    }
+
     private void saveSettings() {
         SharedPreferences.Editor e = getSharedPreferences(AppPrefs.PREFS, MODE_PRIVATE).edit();
         if (serverUrl != null) e.putString(AppPrefs.KEY_SERVER, serverUrl.getText().toString().trim());
@@ -1624,6 +1769,8 @@ public class MainActivity extends Activity {
     }
     private void updateHeader(String tab) {
         if (headerTitle == null || headerSubtitle == null) return;
+        boolean secondaryPage = ("see".equals(tab) && diaryPageOpen) || ("gate".equals(tab) && guardianCalendarDetailOpen);
+        if (topHeader != null) topHeader.setVisibility(secondaryPage ? View.GONE : View.VISIBLE);
         String date = new SimpleDateFormat("M月d日 · EEEE", Locale.CHINA).format(new Date());
         if ("life".equals(tab)) { headerTitle.setText(greeting() + "，" + AppPrefs.userName(this)); headerSubtitle.setText(date); }
         else if ("see".equals(tab)) {
@@ -1941,7 +2088,8 @@ public class MainActivity extends Activity {
     private int dp(float v) { return (int) (v * getResources().getDisplayMetrics().density + 0.5f); }
 
     @Override protected void onResume() { super.onResume(); serviceRunning = CompanionService.isRunning(); updateUI(); if (recentlyOpenedAccessibilitySettings()) scheduleAccessibilityFollowupChecks(); uiHandler.removeCallbacks(refreshTick); uiHandler.post(refreshTick); }
-    @Override protected void onPause() { uiHandler.removeCallbacks(refreshTick); super.onPause(); }
+    @Override protected void onPause() { saveConnectionSettingsOnly(true); uiHandler.removeCallbacks(refreshTick); super.onPause(); }
+    @Override protected void onStop() { saveConnectionSettingsOnly(true); super.onStop(); }
 
     @Override public void onBackPressed() {
         if (diaryDateDrawerOverlay != null) { closeDiaryDateDrawer(null); return; }
@@ -2156,7 +2304,7 @@ public class MainActivity extends Activity {
         getSharedPreferences(AppPrefs.PREFS, MODE_PRIVATE).edit().putBoolean("user_stopped", false).apply(); requestIgnoreBatteryOptimization();
         Intent intent = new Intent(this, CompanionService.class); intent.putExtra("server_url", url); intent.putExtra("token", token);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent); else startService(intent);
-        DebugState.append(this, "已请求启动前台服务：公开版 v0.3.7 右侧 love 线稿花枝已启用"); serviceRunning = true; updateUI();
+        DebugState.append(this, "已请求启动前台服务：公开版 v0.3.8.5 右侧 love 线稿花枝已启用"); serviceRunning = true; updateUI();
     }
 
     private void stopCompanionService() { getSharedPreferences(AppPrefs.PREFS, MODE_PRIVATE).edit().putBoolean("user_stopped", true).apply(); stopService(new Intent(this, CompanionService.class)); DebugState.append(this, "已停止服务"); serviceRunning = false; updateUI(); }
@@ -2364,6 +2512,14 @@ public class MainActivity extends Activity {
     }
 
     private void openUsageAccessSettings() { try { startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)); } catch (Exception e) { Toast.makeText(this, "设置 → 应用 → 特殊权限 → 使用情况访问", Toast.LENGTH_LONG).show(); } }
+    private void openNotificationListenerSettings() {
+        try {
+            startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
+            Toast.makeText(this, "开启“掌心窗媒体状态”后返回；仅用于此刻卡片显示正在播放的音频", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "设置 → 应用 → 特殊权限 → 通知使用权 → 掌心窗媒体状态", Toast.LENGTH_LONG).show();
+        }
+    }
     private void requestLocationPermission() {
         if (Build.VERSION.SDK_INT >= 23 && !NowState.hasLocationPermission(this)) requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, 24);
         else Toast.makeText(this, "定位权限已开启", Toast.LENGTH_SHORT).show();
@@ -2391,7 +2547,8 @@ public class MainActivity extends Activity {
         if (usageAccessButton != null) usageAccessButton.setText(usageOk ? "使用情况权限：已开启" : "打开使用情况访问权限");
         if (locationPermissionButton != null) locationPermissionButton.setText(NowState.hasLocationPermission(this) ? "定位权限：已开启" : "打开定位权限");
         if (overlayPermissionButton != null) overlayPermissionButton.setText((Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this)) ? "悬浮窗权限：已开启" : "打开悬浮窗权限");
-        if (nowStatePermissionText != null) nowStatePermissionText.setText("此刻状态：" + (NowState.hasLocationPermission(this) ? "定位已授权" : "定位未授权") + " · " + ((Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this)) ? "悬浮窗已授权" : "悬浮窗未授权") + "\n用于状态卡片与应用门禁悬浮页。权限均由用户在本机开启。");
+        if (notificationListenerButton != null) notificationListenerButton.setText(MediaState.hasNotificationListenerAccess(this) ? "媒体状态权限：已开启" : "打开媒体状态权限");
+        if (nowStatePermissionText != null) nowStatePermissionText.setText("此刻状态：" + (NowState.hasLocationPermission(this) ? "定位已授权" : "定位未授权") + " · " + ((Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this)) ? "悬浮窗已授权" : "悬浮窗未授权") + " · " + (MediaState.hasNotificationListenerAccess(this) ? "媒体已授权" : "媒体未授权") + "\n用于状态卡片、应用门禁悬浮页和正在播放媒体显示。权限均由用户在本机开启。");
         try {
             JSONObject s = LifeState.collect(this);
             int battery = s.optInt("battery_percent", -1); boolean charging = s.optBoolean("charging", false);
