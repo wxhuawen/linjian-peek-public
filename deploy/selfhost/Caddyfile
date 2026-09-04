@@ -1,3 +1,9 @@
 {$LINJIAN_DOMAIN} {
+    handle /mcp* {
+        reverse_proxy 127.0.0.1:8514 {
+            flush_interval -1
+        }
+    }
+
     reverse_proxy 127.0.0.1:8513
 }

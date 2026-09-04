@@ -1185,6 +1185,7 @@ function makeServer() {
     const latest = configErrors.length ? null : await latestInfo().catch(() => null);
     return { content: [{ type: "text", text: JSON.stringify({
       ok: true,
+      mcp_version: "0.3.8.5",
       linjian_url: effectiveLinjianUrl(),
       configured_linjian_url: RAW_LINJIAN_URL,
       fallback_linjian_urls: LINJIAN_URL_CANDIDATES.filter((u) => u !== RAW_LINJIAN_URL),

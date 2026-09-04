@@ -28,5 +28,31 @@ services:
       retries: 3
       start_period: 10s
 
+  mcp:
+    build:
+      context: ../..
+      dockerfile: deploy/selfhost/mcp.Dockerfile
+    environment:
+      LINJIAN_TOKEN: ${LINJIAN_TOKEN:?Set LINJIAN_TOKEN in deploy/selfhost/.env}
+      LINJIAN_URL: http://server:8513
+      LINJIAN_DEFAULT_DEVICE: android-phone
+      PORT: 8514
+    depends_on:
+      server:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8514:8514"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8514/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
 volumes:
   linjian_data:
