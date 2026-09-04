@@ -5,5 +5,7 @@
         }
     }
 
-    reverse_proxy 127.0.0.1:8513
+    handle {
+        reverse_proxy 127.0.0.1:8513
+    }
 }
