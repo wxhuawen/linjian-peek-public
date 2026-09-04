@@ -154,6 +154,18 @@ public class GuidianState {
         return (pkg == null || !AppPrefs.isPackageLike(pkg)) ? fallback : pkg.trim();
     }
 
+    public static String targetLabel(Context ctx) {
+        String target = targetPackage(ctx);
+        if (target == null || target.trim().isEmpty()) return "未设置";
+        for (java.util.Map.Entry<String, String> e : AppPrefs.targetApps(ctx).entrySet()) {
+            if (target.equals(e.getValue())) return e.getKey();
+        }
+        for (java.util.Map.Entry<String, String> e : AppPrefs.allApps(ctx).entrySet()) {
+            if (target.equals(e.getValue())) return e.getKey();
+        }
+        return target;
+    }
+
     public static void markReturned(Context ctx, String source) {
         long now = System.currentTimeMillis();
         prefs(ctx).edit()

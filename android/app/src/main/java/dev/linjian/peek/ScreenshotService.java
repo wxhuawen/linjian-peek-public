@@ -15,6 +15,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
+import android.text.InputType;
 import android.view.Display;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -27,6 +28,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
@@ -34,6 +37,7 @@ public class ScreenshotService extends AccessibilityService {
     private static volatile ScreenshotService instance;
     private static volatile String currentPackage = "";
     private static volatile String screenText = "";
+    private static volatile LiteSnapshot screenTextLite = new LiteSnapshot("", "");
     private static volatile String screenNodesJson = "[]";
     private final Executor executor = Executors.newSingleThreadExecutor();
     private Handler watchdog;
@@ -44,6 +48,10 @@ public class ScreenshotService extends AccessibilityService {
     public static boolean ready() { return instance != null; }
     public static String currentPackage() { return currentPackage == null ? "" : currentPackage; }
     public static String screenText() { return screenText == null ? "" : screenText; }
+    public static String screenTextLiteForPackage(String expectedPackage) {
+        LiteSnapshot snapshot = screenTextLite;
+        return snapshot.packageName.equals(expectedPackage == null ? "" : expectedPackage) ? snapshot.text : "";
+    }
     public static String screenNodesJson() { return screenNodesJson == null ? "[]" : screenNodesJson; }
 
     private final Runnable watchdogTick = new Runnable() {
@@ -74,21 +82,25 @@ public class ScreenshotService extends AccessibilityService {
                 String url = normalizeUrl(prefs.getString(AppPrefs.KEY_SERVER, ""));
                 String tk = prefs.getString(AppPrefs.KEY_TOKEN, "");
                 boolean userStopped = prefs.getBoolean("user_stopped", true);
-                if (!userStopped && !url.isEmpty() && !tk.isEmpty()) {
+                if (!userStopped && !url.isEmpty() && !tk.isEmpty() && !CompanionService.isRunning()) {
                     String body = pollServerFromAccessibility(url, tk);
                     if (body != null && body.length() > 0) CompanionService.handleCommandBody(ScreenshotService.this, body, url, tk);
                 }
             } catch (Exception e) {
                 DebugState.append(ScreenshotService.this, "无障碍后台轮询异常：" + shortMsg(e));
             }
-            if (backgroundPollHandler != null) backgroundPollHandler.postDelayed(this, Math.max(700, AppPrefs.interval(ScreenshotService.this)));
+            if (backgroundPollHandler != null) {
+                int fallbackDelay = Math.max(AppPrefs.ACCESSIBILITY_FALLBACK_INTERVAL_MS, AppPrefs.interval(ScreenshotService.this) * 4);
+                backgroundPollHandler.postDelayed(this, fallbackDelay);
+            }
         }
     };
 
     @Override public void onServiceConnected() {
         super.onServiceConnected();
         instance = this;
-        DebugState.append(this, "无障碍服务已连接：截图/读屏/节点坐标/活动轨迹/远程息屏可用 v0.3.6.4");
+        NowState.start(this);
+        DebugState.append(this, "无障碍服务已连接：截图/读屏/节点坐标/活动轨迹/远程息屏/专注模式可用 v0.3.8.5");
         watchdog = new Handler(Looper.getMainLooper());
         watchdog.postDelayed(watchdogTick, 15000);
         startBackgroundPolling();
@@ -97,11 +109,12 @@ public class ScreenshotService extends AccessibilityService {
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null) return;
         CharSequence pkg = event.getPackageName();
-        if (pkg != null) currentPackage = pkg.toString();
         int t = event.getEventType();
+        if (t == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != null) currentPackage = pkg.toString();
         if (t == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || t == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED || t == AccessibilityEvent.TYPE_VIEW_SCROLLED) updateScreenText();
         if (t == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != null) {
             ActivityEventStore.recordForegroundChange(this, pkg.toString());
+            FocusMode.onForegroundPackage(this, pkg.toString());
             AppGate.onForegroundPackage(this, pkg.toString());
         }
     }
@@ -112,6 +125,7 @@ public class ScreenshotService extends AccessibilityService {
         instance = null;
         currentPackage = "";
         screenText = "";
+        screenTextLite = new LiteSnapshot("", "");
         screenNodesJson = "[]";
         if (watchdog != null) { watchdog.removeCallbacksAndMessages(null); watchdog = null; }
         if (backgroundPollHandler != null) { backgroundPollHandler.removeCallbacksAndMessages(null); backgroundPollHandler = null; }
@@ -133,14 +147,14 @@ public class ScreenshotService extends AccessibilityService {
         backgroundPollThread = new HandlerThread("LinjianAccessibilityPoll");
         backgroundPollThread.start();
         backgroundPollHandler = new Handler(backgroundPollThread.getLooper());
-        DebugState.append(this, "无障碍后台轮询已启动 v0.3.6.4");
-        backgroundPollHandler.postDelayed(backgroundPollTick, 1000);
+        DebugState.append(this, "无障碍兜底轮询已启动 v0.3.8.5（前台服务运行时不重复轮询）");
+        backgroundPollHandler.postDelayed(backgroundPollTick, 6000);
     }
 
     private String pollServerFromAccessibility(String serverUrl, String token) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(serverUrl + "/api/poll?device_id=" + java.net.URLEncoder.encode(AppPrefs.device(this), "UTF-8")).openConnection();
-        conn.setConnectTimeout(10000);
-        conn.setReadTimeout(15000);
+        conn.setConnectTimeout(7000);
+        conn.setReadTimeout(8000);
         conn.setRequestMethod("GET");
         conn.setRequestProperty("X-Auth-Token", token);
         try {
@@ -151,7 +165,8 @@ public class ScreenshotService extends AccessibilityService {
                 DebugState.append(this, "无障碍后台轮询：收到命令包");
                 return body;
             } else {
-                DebugState.append(this, "无障碍后台轮询失败：HTTP " + code + " " + clip(body));
+                if (code == 429) DebugState.append(this, "无障碍兜底轮询限流：HTTP 429，稍后自动重试");
+                else DebugState.append(this, "无障碍后台轮询失败：HTTP " + code + " " + clip(body));
             }
             return "";
         } finally { conn.disconnect(); }
@@ -163,12 +178,19 @@ public class ScreenshotService extends AccessibilityService {
         try {
             AccessibilityNodeInfo root = getRootInActiveWindow();
             StringBuilder sb = new StringBuilder();
+            StringBuilder lite = new StringBuilder();
             JSONArray nodes = new JSONArray();
             collect(root, sb, nodes, 0, 0);
+            String rootPackage = root == null || root.getPackageName() == null ? "" : root.getPackageName().toString();
+            if (!currentPackage.toLowerCase(Locale.ROOT).contains("systemui") && currentPackage.equals(rootPackage)) {
+                collectLite(root, lite, new LinkedHashSet<String>(), 0, 0);
+            }
             screenText = sb.length() > 2400 ? sb.substring(0, 2400) : sb.toString();
+            String liteText = lite.length() > 400 ? lite.substring(0, 400) : lite.toString();
+            screenTextLite = new LiteSnapshot(rootPackage, liteText);
             screenNodesJson = nodes.toString();
             if (root != null) root.recycle();
-        } catch (Exception ignored) { }
+        } catch (Exception ignored) { screenTextLite = new LiteSnapshot("", ""); }
     }
 
     private int collect(AccessibilityNodeInfo node, StringBuilder sb, JSONArray nodes, int depth, int count) {
@@ -196,6 +218,45 @@ public class ScreenshotService extends AccessibilityService {
         }
         for (int i = 0; i < node.getChildCount(); i++) count = collect(node.getChild(i), sb, nodes, depth + 1, count);
         return count;
+    }
+
+    private int collectLite(AccessibilityNodeInfo node, StringBuilder out, LinkedHashSet<String> seen, int depth, int count) {
+        if (node == null || count >= 80 || depth > 14 || out.length() >= 400) return count;
+        String value = nodeText(node).replaceAll("\\s+", " ").trim();
+        if (!value.isEmpty() && !isSensitiveInput(node, value) && !isControlNoise(value) && seen.add(value)) {
+            if (out.length() > 0) out.append(" | ");
+            int remaining = 400 - out.length();
+            if (remaining > 0) out.append(value, 0, Math.min(value.length(), remaining));
+            count++;
+        }
+        for (int i = 0; i < node.getChildCount() && out.length() < 400; i++) count = collectLite(node.getChild(i), out, seen, depth + 1, count);
+        return count;
+    }
+
+    private boolean isSensitiveInput(AccessibilityNodeInfo node, String value) {
+        if (node.isPassword()) return true;
+        int variation = node.getInputType() & InputType.TYPE_MASK_VARIATION;
+        if (variation == InputType.TYPE_TEXT_VARIATION_PASSWORD || variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                || variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD || variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD) return true;
+        if (!node.isEditable()) return false;
+        String lower = value.toLowerCase(Locale.ROOT);
+        if (lower.contains("验证码") || lower.contains("verification code") || lower.contains("otp") || lower.contains("支付密码")
+                || lower.contains("银行卡") || lower.contains("card number")) return true;
+        return value.matches("\\d{4,19}");
+    }
+
+    private boolean isControlNoise(String value) {
+        String lower = value.toLowerCase(Locale.ROOT);
+        return "button".equals(lower) || "按钮".equals(value) || "image".equals(lower) || "图像".equals(value);
+    }
+
+    private static class LiteSnapshot {
+        final String packageName;
+        final String text;
+        LiteSnapshot(String packageName, String text) {
+            this.packageName = packageName == null ? "" : packageName;
+            this.text = text == null ? "" : text;
+        }
     }
 
     public String getScreenNodesJsonNow() { refreshScreenModel(); return screenNodesJson(); }

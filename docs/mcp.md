@@ -1,4 +1,4 @@
-# MCP 工具清单（v0.3.6.4-public）
+# MCP 工具清单（v0.3.8.5-public）
 
 掌心窗 MCP 服务把手机端能力暴露给支持 MCP 的客户端。所有工具都需要你自己的 `LINJIAN_TOKEN`，并且手机端需要保持服务启动。公开版工具只保留通用能力，不包含私人绑定接口、私人 Token、私人服务地址或固定私人关系。
 
@@ -37,7 +37,8 @@ Render 一键部署时，`LINJIAN_URL` 会由 Blueprint 自动引用 server 的�
 - `latest_screen()`：不触发手机截图，直接读取服务器最近一张截图。
 - `get_life_state(device_id)`：读取生活状态：电量、充电、网络、当前 App、今日屏幕时间、解锁次数、天气地区、门禁/屏幕休息、归电等。
 - `get_senses_state(device_id)`：读取公开版轻量聚合状态，主要包括生活状态和归电状态。
-- `get_phone_state(device_id)`：读取当前包名、当前 App、无障碍状态和屏幕文字摘要。
+- `get_phone_state(device_id)`：读取完整的当前包名、当前 App、无障碍状态和屏幕文字摘要，供调试/诊断使用。
+- `get_phone_state_lite(device_id)`：轻量读取当前前台 App、当前屏幕可见文本和屏幕状态，适合高频主动联系，不返回生活状态全量数据。
 - `get_screen_nodes(device_id, wait_seconds)`：读取当前屏幕无障碍节点，包括文字、控件类型、是否可点击和坐标。
 
 ## 今日窗语与陪伴行动
@@ -77,6 +78,34 @@ Render 一键部署时，`LINJIAN_URL` 会由 Blueprint 自动引用 server 的�
 
 - `get_guardian_calendar(device_id)`：读取守护日历、最近纪念日、节日、倒数日和横幅提醒状态。
 - `add_guardian_calendar_event(title, date, date_type, repeat_type, group, note, remind_days_before, banner_enabled, device_id, wait_seconds)`：添加或更新重要日期。支持阳历、农历、每年重复、分组、备注和提前提醒。
+- `list_guardian_days(device_id, wait_seconds)`：读取手机本机的完整事件列表和稳定 `id`。
+- `add_guardian_day(...)`：添加事件并返回事件 `id`。
+- `update_guardian_day(id, ...)`：按 `id` 修改事件，不影响同日其他事件。
+- `delete_guardian_day(id, confirm, ...)`：按 `id` 删除。`confirm` 必须为 `true`。如果用户只描述“8 月 23 日的生日”，应先调用 `list_guardian_days` 确认唯一事件，再删除。
+
+## v0.3.8.4 日记写入兜底修复
+
+- `write_diary_entry` 不再强制要求 `book_id`。
+- 旧窗口或计划任务带旧 `book_id` 时，如果手机端只有一本日记本，会自动写入唯一日记本。
+- 没有日记本时自动创建默认「TA 的日记」再写入。
+- 多本日记且无法判断目标时返回 `choices`，提示用户选择，不会静默写错。
+
+
+## TA 的日记
+
+日记本与正文默认只保存在手机本机，不进入生活状态上传。手机端服务需保持启动，MCP 才能按需读写。
+
+- `create_diary_book(name, subtitle, cover_style, ...)`：创建日记本，成功结果包含 `book_id`。
+- `list_diary_books(...)`：列出本机日记本。
+- `rename_diary_book(book_id, name, subtitle, ...)`：重命名日记本或修改封面小字。
+- `update_diary_book_cover(book_id, cover_style, cover_uri, ...)`：更新封面样式；本机图片通常由用户在 App 内选择。
+- `write_diary_entry(book_id, book_name, title, content, mood, tags, date, time_label, ...)`：写入一篇日记。`book_id` 可留空；旧 ID 对不上时会尝试用 `book_name` 或唯一日记本兜底，没有日记本时自动创建默认日记本，多本且无法判断时返回候选项。
+- `list_diary_entries(book_id, ...)`：按日记本列出日记。
+- `read_diary_entry(entry_id, ...)`：读取一篇完整日记。
+- `search_diary_entries(book_id, keyword, date_from, date_to, tags, ...)`：按标题、正文、标签、心情和日期范围搜索。
+- `update_diary_entry(entry_id, ...)`：只更新传入字段。
+- `delete_diary_entry(entry_id, confirm, ...)`：删除单篇日记，`confirm` 必须为 `true`。
+- `delete_diary_book(book_id, confirm, ...)`：高风险操作，会连同全部纸页删除；必须先向用户二次确认并传 `confirm=true`。
 
 ## 小红书辅助
 
@@ -134,7 +163,7 @@ Render 一键部署时，`LINJIAN_URL` 会由 Blueprint 自动引用 server 的�
 - 自动发送评论、自动点击和输入建议默认手动确认。
 - 公开版不包含私人 Token、私人服务地址、固定私人关系和不可公开的专属接口。
 
-## v0.3.6.4 应用门禁兼容工具名
+## v0.3.6.6 应用门禁兼容工具名
 
 为避免部分 AI 平台读取到 `/health` 动作清单后调用旧动作名时报 `Tool not found`，MCP 额外暴露以下兼容工具：
 
@@ -145,3 +174,50 @@ Render 一键部署时，`LINJIAN_URL` 会由 Blueprint 自动引用 server 的�
 - `extend_lock`：等同 `extend_screen_break`，延长门禁。
 - `deny_unlock_request`：等同 `deny_screen_break_release_request`，拒绝恢复申请。
 - `list_lockable_apps`、`add_locked_app`、`remove_locked_app`、`set_emergency_passphrase`：旧版命名兼容。
+
+
+## v0.3.8.4 小金库双向申请工具
+
+- `submit_companion_wallet_request`：陪伴者提交申请，等待用户处理。
+- `list_companion_wallet_requests`：陪伴者读取自己提交的申请和用户处理结果。
+- `list_wallet_request_results`：按发起方和状态筛选申请结果。
+- `save_user_wallet_request_result`：在用户明确同意后，写回用户对陪伴者申请的通过 / 暂缓 / 驳回和理由。
+- `edit_wallet_record`：编辑已记入小金库的账单金额、分类、商家和备注。
+- `delete_wallet_record`：删除一条小金库账单。
+
+## v0.3.8.4 外卖助手工具
+
+- `get_takeout_state`：读取外卖助手预算、口味偏好、常点外卖库和最近点单状态。
+- `set_takeout_budget`：设置单餐预算、今日外卖预算和口味偏好。
+- `add_takeout_card` / `save_takeout_card` / `update_takeout_card`：保存或编辑常点外卖卡片，支持分享链接、具体菜品链接、价格区间、备注、规格选择和金额保护。
+- `delete_takeout_card` / `remove_takeout_card`：删除常点外卖卡片。
+- `list_takeout_cards` / `list_takeout_meals`：读取常点外卖库。
+- `remember_takeout_meal` / `remember_current_takeout_meal`：把用户复制的当前外卖分享链接记成一道可复用的饭。
+- `suggest_takeout_options`：根据预算和偏好从常点库里推荐外卖。
+- `create_takeout_plan`：生成点餐行动卡。
+- `takeout_wallet_request`：把外卖计划提交到小金库审批；审批通过后自动入账，付款仍由用户本人确认。
+- `open_takeout_link` / `open_takeout_plan`：打开外卖链接，不会确认订单或付款。
+- `copy_takeout_note`：复制外卖备注。
+- `record_takeout_order`：用户付款后手动补记外卖支出。
+- `prepare_takeout_checkout` / `auto_takeout_checkout`：由手机端在本地连续操作到收银台/付款页；不会点击真正支付按钮。
+- `get_takeout_checkout_status`：读取自动点单进度。
+- `cancel_takeout_checkout`：取消自动点单任务。
+
+
+## v0.3.8.4 新增工具暴露修复
+
+如果 `/health` 已显示小金库双向申请和外卖助手工具，但 AI 客户端工具面板没有暴露出来，请优先检查 MCP 服务是否已经重新部署到 `0.3.8.4`。
+
+本版提供两个兜底方案：
+
+- `wallet_takeout_action`：普通 `/mcp` 中靠前暴露的统一入口。参数 `action` 填具体工具名，`payload_json` 填对应参数 JSON。
+- `/mcp-wallet`：小金库/外卖助手专用端点。连接地址示例：`https://你的-mcp-域名/mcp-wallet`。
+
+常用 action 示例：`submit_companion_wallet_request`、`list_companion_wallet_requests`、`save_user_wallet_request_result`、`get_takeout_state`、`prepare_takeout_checkout`。
+
+
+## v0.3.8.4 专注模式工具与日记本重命名修复
+
+专注模式必须在 MCP 工具列表中暴露：`get_focus_status`、`start_focus_mode`、`end_focus_mode`、`set_focus_plan`、`reply_focus_request`、`approve_focus_unlock`、`deny_focus_unlock`。用户说“帮我专注/锁手机/开专注模式/别让我玩手机”时优先调用 `start_focus_mode`；锁单个 App 才使用应用门禁。
+
+`rename_diary_book` 已支持缺少 `book_id` 时自动处理：传 `old_name + new_name` 可按名字匹配；如果手机端只有一本日记本，只传 `new_name` 也会自动重命名。用户要求改名时不要反复调用 `list_diary_books`。

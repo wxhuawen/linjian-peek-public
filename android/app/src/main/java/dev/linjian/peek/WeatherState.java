@@ -9,7 +9,7 @@ import org.json.JSONObject;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** 天气地区层：手机端保存多个地区和当前地区；v0.3.7.1 会缓存真实天气，失败时回退到备注建议。 */
+/** 天气地区层：手机端保存多个地区和当前地区；v0.3.8.2 会缓存真实天气，失败时回退到备注建议。 */
 public class WeatherState {
     public static final String DEFAULT_LOCATIONS = "家|石家庄||1\n学校|石家庄||0\n常去地|||0\n";
 

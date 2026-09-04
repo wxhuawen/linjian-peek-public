@@ -1,15 +1,19 @@
 {
-  "latest_version_name": "0.3.6.4",
-  "latest_version_code": 30604,
-  "apk_url": "https://github.com/linzhi-524/linjian-peek-public/releases/download/v0.3.6.4/Zhangxinchuang-public-v0.3.6.4.apk",
+  "latest_version_name": "0.3.8.4",
+  "latest_version_code": 30804,
+  "apk_url": "https://github.com/linzhi-524/linjian-peek-public/releases/download/v0.3.8.4/Zhangxinchuang-public-v0.3.8.4.apk",
   "sha256": "",
   "required": false,
+  "notes": [
+    "修复守护页未显示专注模式入口：安心规则中新增「专注模式」卡片，支持查看状态、5 分钟测试和默认规则。",
+    "新增 Focus Mode 专注模式：AI 可通过 MCP 开启、结束和查询全机专注。",
+    "专注锁定页支持“留言给他”和默认一次 1 分钟应急放行。",
+    "MCP /health 明确暴露 focus_tools 和专注工具清单，降低新增工具不显示的问题。",
+    "修复 rename_diary_book：缺少 book_id 时可用 old_name 或唯一日记本自动重命名。",
+    "版本号升级到 v0.3.8.4 / 30804，固定签名保持不变。"
+  ],
   "changelog": [
-    "修复 MCP 状态读取容易超时：get_phone_state 现在快速读取服务器缓存，并且活动日志改为异步记录。",
-    "缩短 MCP 后端请求、命令排队和命令状态轮询的默认等待时间，减少单工具超过 20 秒未返回的问题。",
-    "open_app 与门禁类工具增加空参数拦截：缺少 App 名称或包名时直接提示，不再下发 package_empty。",
-    "增加 MCP 侧常用 App 名称映射：小红书、抖音、微信、QQ、QQ音乐可自动补全包名。",
-    "保留守护日历自定义事件保存修复、get_lock_state 等应用门禁旧版工具名兼容。",
-    "清理公开包里的 server/.env 与 __pycache__，固定签名保持不变。"
+    "修复日记写入 book_id 兜底：旧窗口或计划任务带旧 ID 时，单本日记会自动写入当前日记本。",
+    "write_diary_entry 支持 book_id 留空、book_name 兜底；无日记本时自动创建默认日记本，多本无法判断时返回候选项。"
   ]
 }

@@ -156,7 +156,7 @@ public class GuidianActivity extends Activity {
         right.leftMargin = dp(13);
         actions.addView(acceptAction, right);
 
-        TextView returnHint = text("接通后回到 " + AppPrefs.homeTargetLabel(this), 8, withAlpha(theme.subtext, .72f), false);
+        TextView returnHint = text("接通后回到 " + GuidianState.targetLabel(this), 8, withAlpha(theme.subtext, .72f), false);
         returnHint.setGravity(Gravity.CENTER);
         returnHint.setLetterSpacing(.06f);
         LinearLayout.LayoutParams hintLp = new LinearLayout.LayoutParams(-1, -2);
@@ -250,7 +250,7 @@ public class GuidianActivity extends Activity {
         acceptButton.setEnabled(false);
         if (rejectButton.getParent() instanceof View) ((View) rejectButton.getParent()).setEnabled(false);
         if (acceptButton.getParent() instanceof View) ((View) acceptButton.getParent()).setEnabled(false);
-        callState.setText("已接通 · 正在回到 " + AppPrefs.homeTargetLabel(this));
+        callState.setText("已接通 · 正在回到 " + GuidianState.targetLabel(this));
         callState.setTextColor(theme.primary);
         callerName.setText("已接通");
         acceptButton.setText("✓");
@@ -258,11 +258,18 @@ public class GuidianActivity extends Activity {
         avatarBox.clearAnimation();
         avatarBox.animate().scaleX(1.05f).scaleY(1.05f).setDuration(180).start();
         GuidianState.markReturned(this, "guidian_accept");
+        final android.content.Context appCtx = getApplicationContext();
+        final String target = GuidianState.targetPackage(this);
         handler.postDelayed(() -> {
-            String target = AppPrefs.homeTargetPackage(this);
-            if (!target.isEmpty()) CompanionService.openPackageResult(this, target);
             finish();
-        }, 400L);
+            handler.postDelayed(() -> {
+                String result = target == null || target.trim().isEmpty() ? "package_empty" : CompanionService.openPackageResult(appCtx, target.trim());
+                DebugState.append(appCtx, "归电接通打开目标：" + result + "；target=" + (target == null ? "" : target));
+                if (!result.startsWith("opened_")) {
+                    Toast.makeText(appCtx, "归电目标打开失败：" + result, Toast.LENGTH_SHORT).show();
+                }
+            }, 260L);
+        }, 220L);
     }
 
     private void showReasonDrawer() {

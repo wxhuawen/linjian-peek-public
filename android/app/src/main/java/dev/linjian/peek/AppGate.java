@@ -6,6 +6,20 @@ import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.Settings;
+import android.graphics.Color;
+import android.graphics.PixelFormat;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.view.Gravity;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.widget.Toast;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -36,6 +50,8 @@ public class AppGate {
     private static volatile long lastForegroundSince = 0;
     private static volatile long lastGateAt = 0;
     private static volatile String lastGatePackage = "";
+    private static volatile View overlayView = null;
+    private static volatile WindowManager overlayWindowManager = null;
 
     public static boolean enabled(Context ctx) { return AppPrefs.get(ctx).getBoolean(KEY_ENABLED, true); }
 
@@ -262,13 +278,142 @@ public class AppGate {
             String mode = lock.optString("mode", "medium");
             ScreenshotService svc = ScreenshotService.getInstance();
             if ("strict".equals(mode) && svc != null) svc.doHome();
+            if (canDrawOverlay(ctx)) showOverlayLock(ctx, pkg, lock);
+            else showLockActivity(ctx, pkg);
+            log(ctx, "门禁拦截：" + lock.optString("app_name", pkg) + (canDrawOverlay(ctx) ? "（悬浮层）" : ""));
+            ActivityEventStore.recordPhone(ctx, "screen_break_trigger", "应用门禁触发", lock.optString("app_name", pkg));
+        } catch (Exception e) { DebugState.append(ctx, "门禁检查异常：" + ScreenshotService.shortMsg(e)); }
+    }
+
+    private static boolean canDrawOverlay(Context ctx) {
+        try { return Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(ctx); }
+        catch (Exception e) { return false; }
+    }
+
+    private static void showLockActivity(Context ctx, String pkg) {
+        try {
             Intent i = new Intent(ctx, LockActivity.class);
             i.putExtra("package", pkg);
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             ctx.startActivity(i);
-            log(ctx, "门禁拦截：" + lock.optString("app_name", pkg));
-            ActivityEventStore.recordPhone(ctx, "screen_break_trigger", "应用门禁触发", lock.optString("app_name", pkg));
-        } catch (Exception e) { DebugState.append(ctx, "门禁检查异常：" + ScreenshotService.shortMsg(e)); }
+        } catch (Exception e) { DebugState.append(ctx, "门禁启动锁定页失败：" + ScreenshotService.shortMsg(e)); }
+    }
+
+    private static void showOverlayLock(final Context ctx, final String pkg, final JSONObject lock) {
+        new Handler(Looper.getMainLooper()).post(() -> {
+            try {
+                final Context app = ctx.getApplicationContext();
+                final WindowManager wm = (WindowManager) app.getSystemService(Context.WINDOW_SERVICE);
+                if (wm == null) { showLockActivity(ctx, pkg); return; }
+                removeOverlay();
+
+                // 悬浮窗兜底必须是「全屏触摸拦截层」，不能只是中间一张卡片。
+                // 这样即使全屏 Activity 被系统限制弹不出来，底下的小红书/抖音也不会继续接到点击和滑动。
+                LinearLayout root = new LinearLayout(app);
+                root.setOrientation(LinearLayout.VERTICAL);
+                root.setGravity(Gravity.CENTER);
+                root.setPadding(dp(ctx, 22), dp(ctx, 22), dp(ctx, 22), dp(ctx, 22));
+                root.setClickable(true);
+                root.setFocusable(true);
+                root.setBackgroundColor(0x88F2EAFB);
+                root.setOnClickListener(v -> { /* 空白遮罩吃掉点击，不关闭也不透传 */ });
+
+                LinearLayout card = new LinearLayout(app);
+                card.setOrientation(LinearLayout.VERTICAL);
+                card.setGravity(Gravity.CENTER);
+                card.setPadding(dp(ctx, 22), dp(ctx, 20), dp(ctx, 22), dp(ctx, 20));
+                GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{0xFFFDF6F8, 0xFFEAF6F1});
+                bg.setCornerRadius(dp(ctx, 24));
+                bg.setStroke(dp(ctx, 1), 0x66B8A8D8);
+                card.setBackground(bg);
+                card.setClickable(true);
+                card.setOnClickListener(v -> { /* 卡片区域也不向下透传 */ });
+
+                TextView title = new TextView(app);
+                title.setText(lock.optString("app_name", labelOf(ctx, pkg)) + " 已被锁定");
+                title.setTextColor(0xFF2D3E39);
+                title.setTextSize(20);
+                title.setTypeface(Typeface.DEFAULT_BOLD);
+                title.setGravity(Gravity.CENTER);
+                card.addView(title, new LinearLayout.LayoutParams(-1, -2));
+
+                TextView msg = new TextView(app);
+                String text = lock.optString("message", "先休息一下，等会儿再回来。");
+                if (text == null || text.trim().isEmpty()) text = lock.optString("reason", "先休息一下，等会儿再回来。");
+                msg.setText(text + "\n到 " + lock.optString("locked_until_local", "稍后") + " 自动解除。");
+                msg.setTextColor(0xFF596D66);
+                msg.setTextSize(13);
+                msg.setGravity(Gravity.CENTER);
+                msg.setLineSpacing(dp(ctx, 3), 1f);
+                LinearLayout.LayoutParams msgLp = new LinearLayout.LayoutParams(-1, -2);
+                msgLp.topMargin = dp(ctx, 10);
+                card.addView(msg, msgLp);
+
+                LinearLayout row = new LinearLayout(app);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(Gravity.CENTER);
+                LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, dp(ctx, 38));
+                rowLp.topMargin = dp(ctx, 16);
+
+                Button home = overlayButton(app, "回到桌面", true);
+                home.setOnClickListener(v -> { ScreenshotService svc = ScreenshotService.getInstance(); if (svc != null) svc.doHome(); removeOverlay(); });
+                row.addView(home, new LinearLayout.LayoutParams(0, -1, 1f));
+
+                Button detail = overlayButton(app, "查看详情", false);
+                LinearLayout.LayoutParams detailLp = new LinearLayout.LayoutParams(0, -1, 1f);
+                detailLp.leftMargin = dp(ctx, 8);
+                detail.setOnClickListener(v -> {
+                    removeOverlay();
+                    showLockActivity(app, pkg);
+                });
+                row.addView(detail, detailLp);
+                card.addView(row, rowLp);
+
+                LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(
+                        Math.max(dp(ctx, 280), app.getResources().getDisplayMetrics().widthPixels - dp(ctx, 34)),
+                        -2);
+                root.addView(card, cardLp);
+
+                int type = Build.VERSION.SDK_INT >= 26 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
+                WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                        type,
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                        PixelFormat.TRANSLUCENT);
+                lp.gravity = Gravity.CENTER;
+                wm.addView(root, lp);
+                overlayView = root;
+                overlayWindowManager = wm;
+                DebugState.append(app, "门禁悬浮层已启动：touch_blocking=true；目标=" + pkg);
+            } catch (Exception e) {
+                DebugState.append(ctx, "门禁悬浮层失败，回退锁定页：" + ScreenshotService.shortMsg(e));
+                showLockActivity(ctx, pkg);
+            }
+        });
+    }
+
+    private static Button overlayButton(Context ctx, String text, boolean primary) {
+        Button b = new Button(ctx);
+        b.setText(text);
+        b.setTextSize(12);
+        b.setAllCaps(false);
+        b.setTextColor(primary ? Color.WHITE : 0xFF596D66);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(primary ? 0xFF8E74C8 : 0x22B8A8D8);
+        bg.setCornerRadius(dp(ctx, 18));
+        b.setBackground(bg);
+        return b;
+    }
+
+    private static int dp(Context ctx, float value) { return Math.round(value * ctx.getResources().getDisplayMetrics().density); }
+
+    private static void removeOverlay() {
+        try {
+            if (overlayWindowManager != null && overlayView != null) overlayWindowManager.removeView(overlayView);
+        } catch (Exception ignored) { }
+        overlayView = null;
+        overlayWindowManager = null;
     }
 
     private static void accountUsageSwitch(Context ctx, String nextPkg, long now) throws Exception {

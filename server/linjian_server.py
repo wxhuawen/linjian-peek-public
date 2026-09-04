@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""掌心窗公开版 v0.3.6.4 unified server.
+"""掌心窗公开版 v0.3.8.5 unified server.
 
 零依赖标准库版，负责：
 1. 给手机端下发 peek / open_app / back / home / recents / tap / swipe / set_alarm / send_notification 命令；
@@ -19,12 +19,14 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock
-from urllib.parse import parse_qs, urlparse
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, quote, unquote, urlparse
+from urllib.request import Request, urlopen
 
 DEFAULT_PORT = 8513
 DEFAULT_KEEP = 3
 MAX_UPLOAD_BYTES = 24 * 1024 * 1024
-VERSION = "0.3.6.4"
+VERSION = "0.3.8.5"
 DEFAULT_DEVICE = os.environ.get("LINJIAN_DEFAULT_DEVICE", "android-phone")
 ACTIVITY_EVENT_LIMIT = 500
 
@@ -40,10 +42,140 @@ KNOWN_APPS = {
     "QQ": "com.tencent.mobileqq", "qq": "com.tencent.mobileqq",
     "抖音": "com.ss.android.ugc.aweme", "douyin": "com.ss.android.ugc.aweme",
     "Speedcat": "", "speedcat": "",
+    "美团": "com.sankuai.meituan", "meituan": "com.sankuai.meituan",
+    "饿了么": "me.ele", "eleme": "me.ele",
+    "京东": "com.jingdong.app.mall", "jd": "com.jingdong.app.mall",
 }
 SENSITIVE_PACKAGES = {"com.eg.android.AlipayGphone", "com.tencent.mm.plugin.wallet"}
-ALLOWED_ACTIONS = {"noop", "peek", "open_app", "home", "back", "recents", "screen_off", "turn_screen_off", "lock_screen", "phone_screen_off", "tap", "swipe", "set_alarm", "send_notification", "run_sequence", "save_known_app", "get_screen_nodes", "tap_text", "input_text", "lock_app", "unlock_app", "temporary_unlock_app", "extend_lock", "deny_unlock_request", "get_lock_state", "set_emergency_passphrase", "add_locked_app", "remove_locked_app", "list_lockable_apps", "screen_break_app", "start_screen_break", "screen_break", "end_screen_break", "stop_screen_break", "temporary_screen_break_release", "temporary_screen_release", "extend_screen_break", "deny_screen_break_release_request", "deny_break_release_request", "get_screen_break_state", "set_screen_break_passphrase", "add_screen_break_app", "remove_screen_break_app", "list_screen_break_apps", "get_guidian_state", "set_guidian_config", "trigger_guidian", "mark_guidian_returned", "get_calendar_state", "upsert_calendar_event", "add_calendar_event", "delete_calendar_event"}
+ALLOWED_ACTIONS = {"noop", "peek", "open_app", "home", "back", "recents", "screen_off", "turn_screen_off", "lock_screen", "phone_screen_off", "tap", "swipe", "set_alarm", "send_notification", "run_sequence", "save_known_app", "get_screen_nodes", "tap_text", "input_text", "lock_app", "unlock_app", "temporary_unlock_app", "extend_lock", "deny_unlock_request", "get_lock_state", "set_emergency_passphrase", "add_locked_app", "remove_locked_app", "list_lockable_apps", "screen_break_app", "start_screen_break", "screen_break", "end_screen_break", "stop_screen_break", "temporary_screen_break_release", "temporary_screen_release", "extend_screen_break", "deny_screen_break_release_request", "deny_break_release_request", "get_screen_break_state", "set_screen_break_passphrase", "add_screen_break_app", "remove_screen_break_app", "list_screen_break_apps", "get_focus_status", "start_focus_mode", "end_focus_mode", "set_focus_plan", "reply_focus_request", "approve_focus_unlock", "deny_focus_unlock", "request_focus_unlock", "create_focus_request", "get_guidian_state", "set_guidian_config", "trigger_guidian", "mark_guidian_returned", "get_calendar_state", "upsert_calendar_event", "add_calendar_event", "delete_calendar_event", "create_diary_book", "list_diary_books", "rename_diary_book", "update_diary_book_cover", "write_diary_entry", "list_diary_entries", "read_diary_entry", "search_diary_entries", "update_diary_entry", "delete_diary_entry", "delete_diary_book", "get_wallet_state", "get_wallet_month_state", "list_wallet_months", "add_wallet_record", "list_wallet_pending", "list_wallet_approvals", "list_companion_wallet_requests", "list_wallet_request_results", "submit_wallet_approval", "submit_companion_wallet_request", "decide_wallet_approval", "save_wallet_request_result", "update_wallet_request_result", "save_user_wallet_request_result", "edit_wallet_record", "update_wallet_record", "delete_wallet_record", "remove_wallet_record", "confirm_wallet_record", "get_wallet_rules", "set_wallet_rules", "wallet_approval_request", "get_takeout_state", "list_takeout_cards", "list_takeout_meals", "remember_takeout_meal", "remember_current_takeout_meal", "set_takeout_budget", "set_takeout_preferences", "add_takeout_card", "save_takeout_card", "update_takeout_card", "remove_takeout_card", "delete_takeout_card", "suggest_takeout_options", "create_takeout_plan", "takeout_wallet_request", "open_takeout_link", "open_takeout_plan", "copy_takeout_note", "record_takeout_order", "prepare_takeout_checkout", "auto_takeout_checkout", "get_takeout_checkout_status", "cancel_takeout_checkout"}
 
+
+
+def _nested_url_decode(value: str) -> str:
+    s = str(value or "").strip().replace("&amp;", "&")
+    for _ in range(4):
+        try:
+            d = unquote(s.replace("+", "%20"))
+        except Exception:
+            break
+        if d == s:
+            break
+        s = d
+    return s.strip()
+
+
+def _jd_host_allowed(host: str) -> bool:
+    h = (host or "").lower()
+    return h == "3.cn" or h.endswith(".3.cn") or h == "jd.com" or h.endswith(".jd.com")
+
+
+def _jd_useful_target(value: str) -> str:
+    v = _nested_url_decode(value)
+    if v.lower().startswith("openapp.jdmobile://"):
+        return v
+    try:
+        u = urlparse(v)
+    except Exception:
+        return ""
+    h = (u.hostname or "").lower()
+    if u.scheme not in ("http", "https") or not _jd_host_allowed(h):
+        return ""
+    if h == "3.cn" or h.endswith(".3.cn") or "plogin" in h or "passport" in h or "login" in h:
+        return ""
+    return v
+
+
+def _extract_jd_return_target(value: str, depth: int = 0) -> str:
+    if depth > 3:
+        return ""
+    direct = _jd_useful_target(value)
+    if direct:
+        return direct
+    try:
+        u = urlparse(str(value or "").strip())
+        qs = parse_qs(u.query)
+    except Exception:
+        try:
+            u = urlparse(_nested_url_decode(value))
+            qs = parse_qs(u.query)
+        except Exception:
+            return ""
+    preferred = ("returnurl", "return_url", "returnUrl", "redirect", "redirect_url", "redirectUrl", "target", "targetUrl", "jumpUrl", "jumpurl", "url", "to")
+    for key in preferred:
+        for raw in qs.get(key, []):
+            decoded = _nested_url_decode(raw)
+            hit = _jd_useful_target(decoded) or _extract_jd_return_target(decoded, depth + 1)
+            if hit:
+                return hit
+    for key, values in qs.items():
+        if not any(x in key.lower() for x in ("return", "redirect", "target", "jump", "url")):
+            continue
+        for raw in values:
+            decoded = _nested_url_decode(raw)
+            hit = _jd_useful_target(decoded) or _extract_jd_return_target(decoded, depth + 1)
+            if hit:
+                return hit
+    return ""
+
+
+def _build_jd_openapp(target: str) -> str:
+    target = _nested_url_decode(target)
+    if target.lower().startswith("openapp.jdmobile://"):
+        return target
+    params = json.dumps({"category": "jump", "des": "m", "url": target}, ensure_ascii=False, separators=(",", ":"))
+    return "openapp.jdmobile://virtual?params=" + quote(params, safe="")
+
+
+def _build_jd_search_openapp(keyword: str) -> str:
+    q = str(keyword or "").strip()
+    if not q:
+        return ""
+    params = json.dumps({"category": "jump", "des": "productList", "keyWord": q, "from": "search"}, ensure_ascii=False, separators=(",", ":"))
+    return "openapp.jdmobile://virtual?params=" + quote(params, safe="")
+
+
+def resolve_jd_share_link(raw_url: str, item_query: str = "") -> dict:
+    raw_url = str(raw_url or "").strip()
+    try:
+        start = urlparse(raw_url)
+    except Exception:
+        return {"ok": False, "error": "invalid_url"}
+    if start.scheme != "https" or not ((start.hostname or "").lower() == "3.cn" or (start.hostname or "").lower().endswith(".3.cn")):
+        direct = _jd_useful_target(raw_url)
+        return ({"ok": True, "resolved_url": direct, "openapp_url": _build_jd_openapp(direct), "source": "already_direct", "search_openapp": _build_jd_search_openapp(item_query)}
+                if direct else {"ok": False, "error": "jd_shortlink_required", "search_openapp": _build_jd_search_openapp(item_query)})
+    req = Request(raw_url, headers={
+        "User-Agent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+    })
+    try:
+        with urlopen(req, timeout=15) as resp:
+            final_url = resp.geturl()
+            body = resp.read(600000).decode("utf-8", "replace")
+    except HTTPError as exc:
+        final_url = exc.geturl() or raw_url
+        try: body = exc.read(600000).decode("utf-8", "replace")
+        except Exception: body = ""
+    except Exception as exc:
+        return {"ok": False, "error": "jd_shortlink_fetch_failed", "detail": str(exc), "search_openapp": _build_jd_search_openapp(item_query)}
+    target = _extract_jd_return_target(final_url) or _jd_useful_target(final_url)
+    if not target:
+        for marker in ("returnurl", "returnUrl", "redirectUrl", "jumpUrl", "targetUrl"):
+            pos = body.find(marker)
+            if pos < 0: continue
+            chunk = body[pos:pos + 5000]
+            for sep in ('"', "'"):
+                parts = chunk.split(sep)
+                for part in parts:
+                    hit = _jd_useful_target(part) or _extract_jd_return_target(part)
+                    if hit:
+                        target = hit; break
+                if target: break
+            if target: break
+    if target:
+        return {"ok": True, "resolved_url": target, "openapp_url": _build_jd_openapp(target), "source": "redirect_or_login_return", "final_url": final_url, "search_openapp": _build_jd_search_openapp(item_query)}
+    return {"ok": False, "error": "jd_target_not_found", "final_url": final_url, "search_openapp": _build_jd_search_openapp(item_query)}
 
 def load_dotenv(path: Path) -> None:
     if not path.exists(): return
@@ -90,6 +222,7 @@ class State:
         self.command_history: dict[str, dict] = {}
         self.commands_lock = Lock()
         self.device_states: dict[str, dict] = {}
+        self.phone_state_lite: dict[str, dict] = {}
         self.unlock_requests: list[dict] = []
         self.companion_path = self.data_dir / "companion_state.json"
         self.companion_lock = Lock()
@@ -216,8 +349,9 @@ class State:
             actions.insert(0, entry)
             del actions[120:]
             self.save_companion_state()
-        if data.get("write_activity"):
+        if data.get("write_activity", True):
             self.add_activity_event({
+                "id": data.get("activity_id") or data.get("id") or "",
                 "device_id": data.get("device_id") or DEFAULT_DEVICE, "source": "companion",
                 "type": data.get("type") or "activity", "title": entry["title"],
                 "subtitle": entry["summary"], "action": data.get("action") or "",
@@ -269,6 +403,36 @@ def clip_text(value: str, limit: int = 1200) -> str:
     return value[:limit].rstrip() + "…"
 
 
+def phone_state_lite(state: dict | None) -> dict:
+    state = state if isinstance(state, dict) else {}
+    try:
+        updated_at_ms = int(state.get("updated_at_ms") or 0)
+    except (TypeError, ValueError):
+        updated_at_ms = 0
+    return {
+        "ok": True,
+        "updated_at_local": clip_text(str(state.get("updated_at_local") or ""), 40),
+        "updated_at_ms": updated_at_ms,
+        "current_app": clip_text(str(state.get("current_app") or ""), 160),
+        "current_package": clip_text(str(state.get("current_package") or ""), 240),
+        "screen_on": bool(state.get("screen_on", False)),
+        "screen_text_lite": str(state.get("screen_text_lite") or "").strip()[:500],
+    }
+
+
+def current_phone_state_lite(full_state: dict | None, lite_state: dict | None) -> dict:
+    full_state = full_state if isinstance(full_state, dict) else {}
+    lite_state = lite_state if isinstance(lite_state, dict) else {}
+    if not full_state:
+        return phone_state_lite(lite_state)
+    keys = ("updated_at_local", "updated_at_ms", "current_app", "current_package", "screen_on")
+    if lite_state and all(lite_state.get(key) == full_state.get(key) for key in keys):
+        return phone_state_lite(lite_state)
+    safe_current = {key: full_state.get(key) for key in keys}
+    safe_current["screen_text_lite"] = ""
+    return phone_state_lite(safe_current)
+
+
 class Handler(BaseHTTPRequestHandler):
     state: State
 
@@ -316,7 +480,10 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         qs = parse_qs(parsed.query)
         if path in ("/", "/health"):
-            self._json(200, {"ok": True, "service": "linjian-public", "name": "掌心窗", "version": VERSION, "tools": sorted(ALLOWED_ACTIONS), "guidian": True, "calendar": True, "app_gate": True})
+            self._json(200, {"ok": True, "service": "linjian-public", "name": "掌心窗", "version": VERSION, "tools": sorted(ALLOWED_ACTIONS), "guidian": True, "calendar": True, "diary": True, "diary_storage": "phone_local", "app_gate": True, "focus_tools": True, "diary_rename_fix": True, "diary_write_fallback": True})
+            return
+        if path in ("/mcp", "/sse"):
+            self._json(400, {"ok": False, "error": "LINJIAN_ERR_WRONG_SERVICE", "message": "你访问的是掌心窗 server 服务，不是 MCP 服务。请单独部署 mcp 目录，并在 MCP 客户端填写 MCP 服务域名 + /mcp 或 /sse。"})
             return
         if path == "/api/companion/state":
             if not self._require_token(): return
@@ -365,6 +532,10 @@ class Handler(BaseHTTPRequestHandler):
             device_id = qs.get("device_id", [DEFAULT_DEVICE])[0] or DEFAULT_DEVICE
             state = self.state.device_states.get(device_id)
             self._json(200, {"ok": True, "device_id": device_id, "state": state, "life_state": state}); return
+        if path == "/api/device/state_lite":
+            if not self._require_token(): return
+            device_id = qs.get("device_id", [DEFAULT_DEVICE])[0] or DEFAULT_DEVICE
+            self._json(200, current_phone_state_lite(self.state.device_states.get(device_id), self.state.phone_state_lite.get(device_id))); return
         if path == "/api/guidian_state":
             if not self._require_token(): return
             device_id = qs.get("device_id", [DEFAULT_DEVICE])[0] or DEFAULT_DEVICE
@@ -386,6 +557,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if path in ("/mcp", "/sse"):
+            self._json(400, {"ok": False, "error": "LINJIAN_ERR_WRONG_SERVICE", "message": "你访问的是掌心窗 server 服务，不是 MCP 服务。请单独部署 mcp 目录，并在 MCP 客户端填写 MCP 服务域名 + /mcp 或 /sse。"})
+            return
         if path == "/api/companion/whisper":
             if not self._require_token(): return
             data = self._read_json()
@@ -403,6 +577,10 @@ class Handler(BaseHTTPRequestHandler):
             data = self._read_json()
             event = self.state.add_activity_event(data, max(0, min(300, int(data.get("dedupe_seconds") or 0))))
             self._json(200, {"ok": True, "event": event}); return
+        if path == "/api/takeout/resolve_jd_link":
+            if not self._require_token(): return
+            data = self._read_json()
+            self._json(200, resolve_jd_share_link(data.get("url") or data.get("link") or "", data.get("item_query") or data.get("query") or "")); return
         if path == "/api/peek":
             if not self._require_token(): return
             self._queue(make_command(DEFAULT_DEVICE, "peek")); self._json(200, {"ok": True, "queued": True}); return
@@ -420,7 +598,10 @@ class Handler(BaseHTTPRequestHandler):
                 "temporary_screen_break_release": "临时解除应用门禁", "temporary_unlock_app": "临时解除应用门禁", "deny_screen_break_release_request": "拒绝门禁解除", "deny_unlock_request": "拒绝门禁解除",
                 "get_screen_break_state": "查看应用门禁状态", "get_lock_state": "查看应用门禁状态", "list_screen_break_apps": "查看可管理应用", "list_lockable_apps": "查看可管理应用",
                 "add_screen_break_app": "加入门禁管理", "add_locked_app": "加入门禁管理", "remove_locked_app": "移除门禁应用", "set_screen_break_passphrase": "设置门禁口令", "set_emergency_passphrase": "设置门禁口令",
+                "get_focus_status": "查看专注模式", "start_focus_mode": "开启专注模式", "end_focus_mode": "结束专注模式", "set_focus_plan": "设置专注规则", "reply_focus_request": "回复专注留言", "approve_focus_unlock": "批准专注应急", "deny_focus_unlock": "拒绝专注应急",
                 "get_calendar_state": "查看守护日历", "upsert_calendar_event": "更新守护日历",
+                "get_wallet_state": "读取小金库", "get_wallet_month_state": "读取小金库月份", "list_wallet_months": "读取小金库月份", "list_wallet_pending": "读取小金库待处理", "list_wallet_approvals": "读取小金库审批", "add_wallet_record": "添加小金库账单", "submit_wallet_approval": "提交小金库审批", "submit_companion_wallet_request": "陪伴者提交申请", "list_companion_wallet_requests": "查看陪伴者申请结果", "list_wallet_request_results": "查看小金库申请结果", "decide_wallet_approval": "保存小金库处理结果", "save_wallet_request_result": "保存小金库处理结果", "update_wallet_request_result": "保存小金库处理结果", "save_user_wallet_request_result": "保存用户处理结果", "edit_wallet_record": "编辑小金库账单", "delete_wallet_record": "删除小金库账单", "confirm_wallet_record": "确认小金库账单", "get_wallet_rules": "读取小金库规则", "set_wallet_rules": "设置小金库规则", "wallet_approval_request": "小金库即时审批",
+                "get_takeout_state": "读取外卖小助手", "set_takeout_budget": "设置外卖预算", "add_takeout_card": "保存常点外卖", "save_takeout_card": "保存常点外卖", "update_takeout_card": "编辑常点外卖", "remove_takeout_card": "删除常点外卖", "delete_takeout_card": "删除常点外卖", "list_takeout_cards": "查看常点外卖", "list_takeout_meals": "查看常点外卖", "remember_takeout_meal": "记住这道饭", "remember_current_takeout_meal": "记住当前外卖", "suggest_takeout_options": "帮忙挑外卖", "create_takeout_plan": "生成外卖计划", "takeout_wallet_request": "提交外卖申请", "open_takeout_link": "打开外卖链接", "open_takeout_plan": "打开外卖链接", "copy_takeout_note": "复制外卖备注", "record_takeout_order": "记录外卖支出", "prepare_takeout_checkout": "点到付款页", "auto_takeout_checkout": "点到付款页", "get_takeout_checkout_status": "查看外卖进度", "cancel_takeout_checkout": "取消外卖任务",
                 "get_screen_nodes": "查看当前页面",
                 "peek": "查看屏幕", "run_sequence": "执行组合动作", "home": "回到手机桌面", "back": "返回上一页", "recents": "打开最近任务"
             }
@@ -439,6 +620,11 @@ class Handler(BaseHTTPRequestHandler):
             if not self._require_token(): return
             data = self._read_json(); device_id = data.get("device_id") or DEFAULT_DEVICE
             data["updated_at"] = now_iso(); self.state.device_states[device_id] = data
+            self._json(200, {"ok": True, "device_id": device_id}); return
+        if path == "/api/device/state_lite":
+            if not self._require_token(): return
+            data = self._read_json(); device_id = data.get("device_id") or DEFAULT_DEVICE
+            self.state.phone_state_lite[device_id] = phone_state_lite(data)
             self._json(200, {"ok": True, "device_id": device_id}); return
         if path == "/api/device/report":
             if not self._require_token(): return
