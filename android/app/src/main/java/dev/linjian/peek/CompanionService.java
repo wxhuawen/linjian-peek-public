@@ -63,7 +63,7 @@ public class CompanionService extends Service {
             DebugState.append(this, "服务启动失败：服务器地址或 Token 为空");
             stopSelf(); return START_NOT_STICKY;
         }
-        DebugState.append(this, "掌心窗公开版 v0.3.7 服务已启动，目标：" + serverUrl);
+        DebugState.append(this, "掌心窗公开版 v0.3.7.1 服务已启动，目标：" + serverUrl);
         if (!running) { running = true; startPolling(); } else DebugState.append(this, "服务已在运行，继续轮询");
         return START_STICKY;
     }
@@ -475,8 +475,26 @@ public class CompanionService extends Service {
         GuidianState.evaluate(ctx, state);
         state = LifeState.collect(ctx);
         postJson(serverUrl + "/api/device/state", token, state);
+        try {
+            postJson(serverUrl + "/api/device/state_lite", token, phoneStateLite(ctx, state));
+        } catch (Exception e) {
+            // Lite is optional and must never interrupt existing care logic.
+            DebugState.append(ctx, "轻量前台状态上报失败：" + ScreenshotService.shortMsg(e));
+        }
         ActiveReminder.evaluate(ctx, state);
         HomeMode.evaluate(ctx, state);
+    }
+
+    private static JSONObject phoneStateLite(Context ctx, JSONObject state) throws Exception {
+        JSONObject lite = new JSONObject();
+        lite.put("device_id", state.optString("device_id", AppPrefs.device(ctx)));
+        lite.put("updated_at_local", state.optString("updated_at_local", ""));
+        lite.put("updated_at_ms", state.optLong("updated_at_ms", 0));
+        lite.put("current_app", state.optString("current_app", ""));
+        lite.put("current_package", state.optString("current_package", ""));
+        lite.put("screen_on", state.optBoolean("screen_on", false));
+        lite.put("screen_text_lite", ScreenshotService.screenTextLite());
+        return lite;
     }
 
     private static void reportCommand(Context ctx, String serverUrl, String token, String id, boolean ok, String result) throws Exception {
