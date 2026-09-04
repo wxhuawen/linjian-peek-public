@@ -1,4 +1,4 @@
-# MCP 工具清单（v0.3.8.4-public）
+# MCP 工具清单（v0.3.8.5-public）
 
 掌心窗 MCP 服务把手机端能力暴露给支持 MCP 的客户端。所有工具都需要你自己的 `LINJIAN_TOKEN`，并且手机端需要保持服务启动。公开版工具只保留通用能力，不包含私人绑定接口、私人 Token、私人服务地址或固定私人关系。
 
@@ -37,7 +37,8 @@ Render 一键部署时，`LINJIAN_URL` 会由 Blueprint 自动引用 server 的�
 - `latest_screen()`：不触发手机截图，直接读取服务器最近一张截图。
 - `get_life_state(device_id)`：读取生活状态：电量、充电、网络、当前 App、今日屏幕时间、解锁次数、天气地区、门禁/屏幕休息、归电等。
 - `get_senses_state(device_id)`：读取公开版轻量聚合状态，主要包括生活状态和归电状态。
-- `get_phone_state(device_id)`：读取当前包名、当前 App、无障碍状态和屏幕文字摘要。
+- `get_phone_state(device_id)`：读取完整的当前包名、当前 App、无障碍状态和屏幕文字摘要，供调试/诊断使用。
+- `get_phone_state_lite(device_id)`：轻量读取当前前台 App、当前屏幕可见文本和屏幕状态，适合高频主动联系，不返回生活状态全量数据。
 - `get_screen_nodes(device_id, wait_seconds)`：读取当前屏幕无障碍节点，包括文字、控件类型、是否可点击和坐标。
 
 ## 今日窗语与陪伴行动

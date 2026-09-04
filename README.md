@@ -1,4 +1,10 @@
-# 掌心窗公开版 v0.3.8.4
+# 掌心窗公开版 v0.3.8.5
+
+## v0.3.8.5 轻量前台状态
+
+- 基于作者 v0.3.8.4，新增 `get_phone_state_lite`，用于高频读取当前前台 App、亮屏状态和精简可见文字。
+- lite 状态由服务端独立缓存并直接返回，不构造完整生活状态响应；原 `get_phone_state` 保持兼容。
+- 无障碍断开、页面与包名不一致或快照不同步时不返回旧页面文字。
 
 ## v0.3.8.4 日记写入兜底修复
 
@@ -159,15 +165,15 @@ update.json   版本更新信息
 
 1. 将源码包解压并覆盖到公开仓库根目录，确保 `.github`、`android`、`server`、`mcp` 位于根目录。
 2. 打开 GitHub 仓库 → **Actions** → **Build Android Public APK** → **Run workflow**。
-3. 构建成功后下载 `zhangxinchuang-public-v0.3.8.4-apk` artifact。
+3. 构建成功后下载 `zhangxinchuang-public-debug-apk` artifact。
 
 构建产物为：
 
 ```text
-android/Zhangxinchuang-public-v0.3.8.4.apk
+android/Zhangxinchuang-public-v0.3.8.5.apk
 ```
 
-版本名 `0.3.8.4`，版本码 `30804`。
+版本名 `0.3.8.5`，版本码 `30805`。
 
 ### 固定签名
 

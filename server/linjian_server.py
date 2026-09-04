@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""掌心窗公开版 v0.3.8.4 unified server.
+"""掌心窗公开版 v0.3.8.5 unified server.
 
 零依赖标准库版，负责：
 1. 给手机端下发 peek / open_app / back / home / recents / tap / swipe / set_alarm / send_notification 命令；
@@ -26,7 +26,7 @@ from urllib.request import Request, urlopen
 DEFAULT_PORT = 8513
 DEFAULT_KEEP = 3
 MAX_UPLOAD_BYTES = 24 * 1024 * 1024
-VERSION = "0.3.8.4"
+VERSION = "0.3.8.5"
 DEFAULT_DEVICE = os.environ.get("LINJIAN_DEFAULT_DEVICE", "android-phone")
 ACTIVITY_EVENT_LIMIT = 500
 
@@ -222,6 +222,7 @@ class State:
         self.command_history: dict[str, dict] = {}
         self.commands_lock = Lock()
         self.device_states: dict[str, dict] = {}
+        self.phone_state_lite: dict[str, dict] = {}
         self.unlock_requests: list[dict] = []
         self.companion_path = self.data_dir / "companion_state.json"
         self.companion_lock = Lock()
@@ -402,6 +403,36 @@ def clip_text(value: str, limit: int = 1200) -> str:
     return value[:limit].rstrip() + "…"
 
 
+def phone_state_lite(state: dict | None) -> dict:
+    state = state if isinstance(state, dict) else {}
+    try:
+        updated_at_ms = int(state.get("updated_at_ms") or 0)
+    except (TypeError, ValueError):
+        updated_at_ms = 0
+    return {
+        "ok": True,
+        "updated_at_local": clip_text(str(state.get("updated_at_local") or ""), 40),
+        "updated_at_ms": updated_at_ms,
+        "current_app": clip_text(str(state.get("current_app") or ""), 160),
+        "current_package": clip_text(str(state.get("current_package") or ""), 240),
+        "screen_on": bool(state.get("screen_on", False)),
+        "screen_text_lite": str(state.get("screen_text_lite") or "").strip()[:500],
+    }
+
+
+def current_phone_state_lite(full_state: dict | None, lite_state: dict | None) -> dict:
+    full_state = full_state if isinstance(full_state, dict) else {}
+    lite_state = lite_state if isinstance(lite_state, dict) else {}
+    if not full_state:
+        return phone_state_lite(lite_state)
+    keys = ("updated_at_local", "updated_at_ms", "current_app", "current_package", "screen_on")
+    if lite_state and all(lite_state.get(key) == full_state.get(key) for key in keys):
+        return phone_state_lite(lite_state)
+    safe_current = {key: full_state.get(key) for key in keys}
+    safe_current["screen_text_lite"] = ""
+    return phone_state_lite(safe_current)
+
+
 class Handler(BaseHTTPRequestHandler):
     state: State
 
@@ -501,6 +532,10 @@ class Handler(BaseHTTPRequestHandler):
             device_id = qs.get("device_id", [DEFAULT_DEVICE])[0] or DEFAULT_DEVICE
             state = self.state.device_states.get(device_id)
             self._json(200, {"ok": True, "device_id": device_id, "state": state, "life_state": state}); return
+        if path == "/api/device/state_lite":
+            if not self._require_token(): return
+            device_id = qs.get("device_id", [DEFAULT_DEVICE])[0] or DEFAULT_DEVICE
+            self._json(200, current_phone_state_lite(self.state.device_states.get(device_id), self.state.phone_state_lite.get(device_id))); return
         if path == "/api/guidian_state":
             if not self._require_token(): return
             device_id = qs.get("device_id", [DEFAULT_DEVICE])[0] or DEFAULT_DEVICE
@@ -585,6 +620,11 @@ class Handler(BaseHTTPRequestHandler):
             if not self._require_token(): return
             data = self._read_json(); device_id = data.get("device_id") or DEFAULT_DEVICE
             data["updated_at"] = now_iso(); self.state.device_states[device_id] = data
+            self._json(200, {"ok": True, "device_id": device_id}); return
+        if path == "/api/device/state_lite":
+            if not self._require_token(): return
+            data = self._read_json(); device_id = data.get("device_id") or DEFAULT_DEVICE
+            self.state.phone_state_lite[device_id] = phone_state_lite(data)
             self._json(200, {"ok": True, "device_id": device_id}); return
         if path == "/api/device/report":
             if not self._require_token(): return

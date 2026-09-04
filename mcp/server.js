@@ -74,7 +74,7 @@ const DEFAULT_CARE_POLICY = {
   consent_mode: "palm_window_open_is_active",
   care_style: "active_possessive_affectionate",
   allowed_actions: [
-    "get_phone_state", "get_life_state", "get_calendar_state", "upsert_calendar_event", "get_senses_state", "send_notification",
+    "get_phone_state", "get_phone_state_lite", "get_life_state", "get_calendar_state", "upsert_calendar_event", "get_senses_state", "send_notification",
     "trigger_guidian", "screen_break_app", "end_screen_break", "extend_screen_break", "get_screen_break_state", "get_lock_state", "open_app", "set_alarm", "screen_off", "run_sequence"
   ],
   sensitive_apps: [
@@ -151,6 +151,7 @@ const APP_TARGET_ACTIONS = new Set([
 
 const COMPANION_ACTION_META = {
   get_phone_state: ["观察", "查看手机状态", "确认生活状态与连接情况"],
+  get_phone_state_lite: ["观察", "查看当前前台", "确认屏幕、前台 App 与可见文字"],
   get_life_state: ["观察", "查看今日状态", "整理电量、屏幕时间与当前状态"],
   get_guardian_calendar: ["观察", "查看守护日历", "确认最近的重要日子"],
   add_guardian_calendar_event: ["守护", "添加日历事项", "为重要日子留下提醒"],
@@ -990,20 +991,20 @@ function registerWalletTakeoutTools(server, { includeUnified = false } = {}) {
 }
 
 function makeWalletTakeoutServer() {
-  const server = new McpServer({ name: "掌心窗小金库外卖", version: "0.3.8.4" });
+  const server = new McpServer({ name: "掌心窗小金库外卖", version: "0.3.8.5" });
   server.tool("linjian_status", "检查掌心窗后端、MCP 配置，以及当前是否使用小金库/外卖专用 schema。", {}, async () => {
     const configErrors = [];
     if (!LINJIAN_URL_CANDIDATES.length) configErrors.push("Missing env LINJIAN_URL");
     if (!LINJIAN_TOKEN) configErrors.push("Missing env LINJIAN_TOKEN");
     const health = configErrors.length ? { ok: false, error: configErrors.join("; ") } : await linjianFetch("/health").then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
-    return textResult({ ok: true, schema_mode: "wallet_takeout_only", version: "0.3.8.4", has_url: Boolean(LINJIAN_URL_CANDIDATES.length), has_token: Boolean(LINJIAN_TOKEN), linjian_url: effectiveLinjianUrl(), health, tools: Array.from(WALLET_TAKEOUT_ACTIONS), note: "如果普通 /mcp 里新增工具没有暴露，请让 AI 客户端连接 /mcp-wallet。" });
+    return textResult({ ok: true, schema_mode: "wallet_takeout_only", version: "0.3.8.5", has_url: Boolean(LINJIAN_URL_CANDIDATES.length), has_token: Boolean(LINJIAN_TOKEN), linjian_url: effectiveLinjianUrl(), health, tools: Array.from(WALLET_TAKEOUT_ACTIONS), note: "如果普通 /mcp 里新增工具没有暴露，请让 AI 客户端连接 /mcp-wallet。" });
   });
   registerWalletTakeoutTools(server, { includeUnified: true });
   return server;
 }
 
 function makeServer() {
-  const server = new McpServer({ name: "掌心窗", version: "0.3.8.4" });
+  const server = new McpServer({ name: "掌心窗", version: "0.3.8.5" });
   const commandBackedTools = new Set([
     "peek_screen", "get_screen_nodes", "tap_text", "input_text", "draft_xhs_comment", "xhs_comment", "send_visible_comment_after_confirmation",
     "add_guardian_calendar_event", "care_action", "trigger_guidian", "mark_guidian_returned",
@@ -1020,7 +1021,7 @@ function makeServer() {
   server.tool = (...args) => {
     const toolName = String(args[0] || "");
     const callbackIndex = args.map((x) => typeof x).lastIndexOf("function");
-    if (callbackIndex >= 0 && toolName !== "get_activity_events" && toolName !== "add_activity_event" && !commandBackedTools.has(toolName)) {
+    if (callbackIndex >= 0 && toolName !== "get_activity_events" && toolName !== "add_activity_event" && toolName !== "get_phone_state_lite" && !commandBackedTools.has(toolName)) {
       const callback = args[callbackIndex];
       args[callbackIndex] = async (...callArgs) => {
         try {
@@ -1234,6 +1235,17 @@ function makeServer() {
       return textResult({ ...data, mcp_note: "已快速读取服务器缓存状态；如果 state/life_state 为 null，请保持掌心窗前台或允许后台运行后重试。" });
     } catch (error) {
       return textResult({ ok: false, error: "phone_state_fetch_failed", message: "读取手机状态超时或后端暂时不可达；请确认 Render 服务已唤醒、MCP URL/Token 正确、掌心窗允许后台运行。", detail: String(error?.message || error).slice(0, 500) });
+    }
+  });
+
+  server.tool("get_phone_state_lite", "轻量读取当前前台 App、当前屏幕可见文本和屏幕状态，适合高频主动联系，不返回生活状态全量数据。", { device_id: z.string().default(DEFAULT_DEVICE) }, async ({ device_id = DEFAULT_DEVICE }) => {
+    try {
+      const res = await linjianFetch(`/api/device/state_lite?device_id=${encodeURIComponent(device_id)}`, { timeout_ms: QUICK_FETCH_TIMEOUT_MS });
+      const data = await res.json();
+      postCompanionAction("get_phone_state_lite", { device_id }).catch(() => null);
+      return textResult(data);
+    } catch (error) {
+      return textResult({ ok: false, error: "phone_state_lite_fetch_failed", message: "读取轻量手机状态超时或后端暂时不可达。", detail: String(error?.message || error).slice(0, 500) });
     }
   });
 
@@ -2133,7 +2145,7 @@ app.get("/", (_req, res) => res.type("text/plain").send("掌心窗 unified MCP i
 app.get("/health", (_req, res) => res.json({
   ok: true,
   service: "linjian-public-mcp",
-  version: "0.3.8.4",
+  version: "0.3.8.5",
   has_url: Boolean(LINJIAN_URL_CANDIDATES.length),
   has_token: Boolean(LINJIAN_TOKEN),
   configured_linjian_url: RAW_LINJIAN_URL || "",
