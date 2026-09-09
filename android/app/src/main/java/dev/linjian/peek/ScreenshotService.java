@@ -19,6 +19,8 @@ import android.text.InputType;
 import android.view.Display;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.inputmethod.InputMethodInfo;
+import android.view.inputmethod.InputMethodManager;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -36,6 +38,7 @@ import java.util.concurrent.Executors;
 public class ScreenshotService extends AccessibilityService {
     private static volatile ScreenshotService instance;
     private static volatile String currentPackage = "";
+    private static volatile String foregroundHostPackage = "";
     private static volatile String screenText = "";
     private static volatile LiteSnapshot screenTextLite = new LiteSnapshot("", "");
     private static volatile String screenNodesJson = "[]";
@@ -47,6 +50,31 @@ public class ScreenshotService extends AccessibilityService {
     public static ScreenshotService getInstance() { return instance; }
     public static boolean ready() { return instance != null; }
     public static String currentPackage() { return currentPackage == null ? "" : currentPackage; }
+    public static String foregroundPackage(Context ctx) {
+        String host = foregroundHostPackage == null ? "" : foregroundHostPackage.trim();
+        if (!host.isEmpty() && !isInputMethodPackage(ctx, host)) return host;
+        String raw = currentPackage();
+        if (!raw.isEmpty() && !"com.android.systemui".equals(raw) && !isInputMethodPackage(ctx, raw)) return raw;
+        return ctx == null ? "" : ActivityEventStore.lastForegroundPackage(ctx);
+    }
+    public static boolean isInputMethodPackage(Context ctx, String packageName) {
+        String pkg = packageName == null ? "" : packageName.trim();
+        if (pkg.isEmpty()) return false;
+        String lower = pkg.toLowerCase(Locale.ROOT);
+        if (lower.contains("inputmethod") || lower.contains(".ime.") || lower.endsWith(".ime")
+                || lower.contains("keyboard") || lower.contains("honeyboard") || lower.contains("swiftkey")
+                || lower.contains("qqpinyin") || lower.contains("sogouime")) return true;
+        if (ctx == null) return false;
+        try {
+            InputMethodManager manager = (InputMethodManager) ctx.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (manager != null) {
+                for (InputMethodInfo info : manager.getInputMethodList()) {
+                    if (info != null && pkg.equals(info.getPackageName())) return true;
+                }
+            }
+        } catch (Exception ignored) { }
+        return false;
+    }
     public static String screenText() { return screenText == null ? "" : screenText; }
     public static String screenTextLiteForPackage(String expectedPackage) {
         LiteSnapshot snapshot = screenTextLite;
@@ -99,8 +127,10 @@ public class ScreenshotService extends AccessibilityService {
     @Override public void onServiceConnected() {
         super.onServiceConnected();
         instance = this;
+        foregroundHostPackage = ActivityEventStore.lastForegroundPackage(this);
+        if (isInputMethodPackage(this, foregroundHostPackage)) foregroundHostPackage = "";
         NowState.start(this);
-        DebugState.append(this, "无障碍服务已连接：截图/读屏/节点坐标/活动轨迹/远程息屏/专注模式可用 v0.3.8.5");
+        DebugState.append(this, "无障碍服务已连接：截图/读屏/节点坐标/活动轨迹/远程息屏/专注模式可用 v0.3.8.6");
         watchdog = new Handler(Looper.getMainLooper());
         watchdog.postDelayed(watchdogTick, 15000);
         startBackgroundPolling();
@@ -110,7 +140,13 @@ public class ScreenshotService extends AccessibilityService {
         if (event == null) return;
         CharSequence pkg = event.getPackageName();
         int t = event.getEventType();
-        if (t == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != null) currentPackage = pkg.toString();
+        if (t == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != null) {
+            String eventPackage = pkg.toString();
+            currentPackage = eventPackage;
+            if (!"com.android.systemui".equals(eventPackage) && !isInputMethodPackage(this, eventPackage)) {
+                foregroundHostPackage = eventPackage;
+            }
+        }
         if (t == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || t == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED || t == AccessibilityEvent.TYPE_VIEW_SCROLLED) updateScreenText();
         if (t == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != null) {
             ActivityEventStore.recordForegroundChange(this, pkg.toString());
@@ -124,6 +160,7 @@ public class ScreenshotService extends AccessibilityService {
         DebugState.append(this, reason);
         instance = null;
         currentPackage = "";
+        foregroundHostPackage = "";
         screenText = "";
         screenTextLite = new LiteSnapshot("", "");
         screenNodesJson = "[]";
@@ -147,7 +184,7 @@ public class ScreenshotService extends AccessibilityService {
         backgroundPollThread = new HandlerThread("LinjianAccessibilityPoll");
         backgroundPollThread.start();
         backgroundPollHandler = new Handler(backgroundPollThread.getLooper());
-        DebugState.append(this, "无障碍兜底轮询已启动 v0.3.8.5（前台服务运行时不重复轮询）");
+        DebugState.append(this, "无障碍兜底轮询已启动 v0.3.8.6（前台服务运行时不重复轮询）");
         backgroundPollHandler.postDelayed(backgroundPollTick, 6000);
     }
 
@@ -182,7 +219,8 @@ public class ScreenshotService extends AccessibilityService {
             JSONArray nodes = new JSONArray();
             collect(root, sb, nodes, 0, 0);
             String rootPackage = root == null || root.getPackageName() == null ? "" : root.getPackageName().toString();
-            if (!currentPackage.toLowerCase(Locale.ROOT).contains("systemui") && currentPackage.equals(rootPackage)) {
+            String hostPackage = foregroundPackage(this);
+            if (!hostPackage.isEmpty() && hostPackage.equals(rootPackage) && !isInputMethodPackage(this, rootPackage)) {
                 collectLite(root, lite, new LinkedHashSet<String>(), 0, 0);
             }
             screenText = sb.length() > 2400 ? sb.substring(0, 2400) : sb.toString();

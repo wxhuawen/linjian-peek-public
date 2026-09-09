@@ -1,4 +1,10 @@
-# 掌心窗公开版 v0.3.8.5
+# 掌心窗公开版 v0.3.8.6
+
+## v0.3.8.6 输入法宿主识别修复
+
+- `get_phone_state_lite` 检测到搜狗、Gboard、SwiftKey 等输入法窗口时，不再把 IME 当作前台 App。
+- 手机端保留最近一次真实宿主 App；服务端可用 `app_open/foreground_changed` 记录回溯兜底。
+- 回溯宿主时丢弃可能来自输入法窗口的 lite 文本，避免把键盘候选内容误当成宿主页面。
 
 ## v0.3.8.5 轻量前台状态
 
@@ -170,10 +176,10 @@ update.json   版本更新信息
 构建产物为：
 
 ```text
-android/Zhangxinchuang-public-v0.3.8.5.apk
+android/Zhangxinchuang-public-v0.3.8.6.apk
 ```
 
-版本名 `0.3.8.5`，版本码 `30805`。
+版本名 `0.3.8.6`，版本码 `30806`。
 
 ### 固定签名
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""掌心窗公开版 v0.3.8.5 unified server.
+"""掌心窗公开版 v0.3.8.6 unified server.
 
 零依赖标准库版，负责：
 1. 给手机端下发 peek / open_app / back / home / recents / tap / swipe / set_alarm / send_notification 命令；
@@ -29,9 +29,10 @@ DEFAULT_PORT = 8513
 DEFAULT_KEEP = 3
 MAX_UPLOAD_BYTES = 24 * 1024 * 1024
 MAX_WEARABLE_STATE_BYTES = 64 * 1024
-VERSION = "0.3.8.5"
+VERSION = "0.3.8.6"
 DEFAULT_DEVICE = os.environ.get("LINJIAN_DEFAULT_DEVICE", "android-phone")
 ACTIVITY_EVENT_LIMIT = 500
+IME_HOST_LOOKBACK_SECONDS = 12 * 60 * 60
 
 ERR_BAD_TOKEN = "LINJIAN_ERR_BAD_TOKEN"
 ERR_NO_IMAGE = "LINJIAN_ERR_NO_IMAGE"
@@ -424,17 +425,69 @@ def phone_state_lite(state: dict | None) -> dict:
     }
 
 
-def current_phone_state_lite(full_state: dict | None, lite_state: dict | None) -> dict:
+def is_ime_foreground(app_name: str = "", package_name: str = "") -> bool:
+    package = str(package_name or "").strip().lower()
+    app = str(app_name or "").strip().lower()
+    package_markers = (
+        "inputmethod", ".ime.", "keyboard", "honeyboard", "swiftkey",
+        "qqpinyin", "sogouime", "baidu.input", "iflytek.input",
+    )
+    app_markers = ("输入法", "键盘", "keyboard", "swiftkey", "gboard", "搜狗输入法")
+    return any(marker in package for marker in package_markers) or any(marker in app for marker in app_markers)
+
+
+def latest_host_foreground(activity_events: list[dict] | None, device_id: str, updated_at_ms: int) -> dict:
+    reference_seconds = updated_at_ms / 1000.0 if updated_at_ms > 0 else time.time()
+    best: tuple[float, dict] | None = None
+    for event in activity_events or []:
+        if not isinstance(event, dict) or str(event.get("device_id") or DEFAULT_DEVICE) != device_id:
+            continue
+        if event.get("type") != "app_open" and event.get("action") != "foreground_changed":
+            continue
+        package = str(event.get("package_name") or event.get("package") or "").strip()
+        app = str(event.get("app_name") or event.get("app") or "").strip()
+        if not package or package == "com.android.systemui" or is_ime_foreground(app, package):
+            continue
+        event_seconds = parse_iso_seconds(str(event.get("created_at") or event.get("at") or ""))
+        if event_seconds <= 0 or event_seconds > reference_seconds + 5:
+            continue
+        if reference_seconds - event_seconds > IME_HOST_LOOKBACK_SECONDS:
+            continue
+        if best is None or event_seconds > best[0]:
+            best = (event_seconds, {"current_app": app or package, "current_package": package})
+    return best[1] if best else {}
+
+
+def current_phone_state_lite(full_state: dict | None, lite_state: dict | None,
+                             activity_events: list[dict] | None = None,
+                             device_id: str = DEFAULT_DEVICE) -> dict:
     full_state = full_state if isinstance(full_state, dict) else {}
     lite_state = lite_state if isinstance(lite_state, dict) else {}
     if not full_state:
-        return phone_state_lite(lite_state)
-    keys = ("updated_at_local", "updated_at_ms", "current_app", "current_package", "screen_on")
-    if lite_state and all(lite_state.get(key) == full_state.get(key) for key in keys):
-        return phone_state_lite(lite_state)
-    safe_current = {key: full_state.get(key) for key in keys}
-    safe_current["screen_text_lite"] = ""
-    return phone_state_lite(safe_current)
+        current = phone_state_lite(lite_state)
+    else:
+        keys = ("updated_at_local", "updated_at_ms", "current_app", "current_package", "screen_on")
+        same_snapshot = lite_state and all(lite_state.get(key) == full_state.get(key) for key in keys)
+        host_corrected_snapshot = (
+            lite_state
+            and all(lite_state.get(key) == full_state.get(key) for key in ("updated_at_local", "updated_at_ms", "screen_on"))
+            and is_ime_foreground(full_state.get("current_app"), full_state.get("current_package"))
+            and not is_ime_foreground(lite_state.get("current_app"), lite_state.get("current_package"))
+        )
+        if same_snapshot or host_corrected_snapshot:
+            current = phone_state_lite(lite_state)
+        else:
+            safe_current = {key: full_state.get(key) for key in keys}
+            safe_current["screen_text_lite"] = ""
+            current = phone_state_lite(safe_current)
+
+    if is_ime_foreground(current.get("current_app"), current.get("current_package")):
+        host = latest_host_foreground(activity_events, device_id, current.get("updated_at_ms") or 0)
+        current["current_app"] = host.get("current_app", "")
+        current["current_package"] = host.get("current_package", "")
+        # The uploaded text belongs to the IME snapshot, not to the recovered host App.
+        current["screen_text_lite"] = ""
+    return current
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -543,7 +596,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/device/state_lite":
             if not self._require_token(): return
             device_id = qs.get("device_id", [DEFAULT_DEVICE])[0] or DEFAULT_DEVICE
-            self._json(200, current_phone_state_lite(self.state.device_states.get(device_id), self.state.phone_state_lite.get(device_id))); return
+            events = self.state.list_activity_events(device_id=device_id, limit=ACTIVITY_EVENT_LIMIT)
+            self._json(200, current_phone_state_lite(self.state.device_states.get(device_id), self.state.phone_state_lite.get(device_id), events, device_id)); return
         if path == "/api/guidian_state":
             if not self._require_token(): return
             device_id = qs.get("device_id", [DEFAULT_DEVICE])[0] or DEFAULT_DEVICE

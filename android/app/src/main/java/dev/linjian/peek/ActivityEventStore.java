@@ -44,7 +44,7 @@ public final class ActivityEventStore {
     public static void recordForegroundChange(Context ctx, String packageName) {
         if (!AppPrefs.get(ctx).getBoolean(AppPrefs.KEY_JOURNEY_ENABLED, true)) return;
         String pkg = packageName == null ? "" : packageName.trim();
-        if (pkg.isEmpty() || pkg.equals("com.android.systemui") || pkg.contains("inputmethod")) return;
+        if (pkg.isEmpty() || pkg.equals("com.android.systemui") || ScreenshotService.isInputMethodPackage(ctx, pkg)) return;
         SharedPreferences p = AppPrefs.get(ctx);
         String previous = p.getString(KEY_LAST_PACKAGE, "");
         if (pkg.equals(previous)) return;
@@ -58,6 +58,10 @@ public final class ActivityEventStore {
                     .put("app_name", app).put("package_name", pkg).put("action", "foreground_changed")
                     .put("status", "completed").put("metadata_json", new JSONObject().put("previous_package", previous)), true);
         } catch (Exception ignored) { }
+    }
+
+    public static String lastForegroundPackage(Context ctx) {
+        return AppPrefs.get(ctx).getString(KEY_LAST_PACKAGE, "").trim();
     }
 
     public static void recordPhone(Context ctx, String type, String title, String subtitle) {
