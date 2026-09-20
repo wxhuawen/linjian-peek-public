@@ -23,7 +23,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, unquote, urlparse
 from urllib.request import Request, urlopen
 
-from wearable_state import WearableStateStore
+from wearable_state import WearableHistoryStore, WearableStateStore
 
 DEFAULT_PORT = 8513
 DEFAULT_KEEP = 3
@@ -235,6 +235,7 @@ class State:
         self.activity_lock = Lock()
         self.activity_events = self._load_activity_events()
         self.wearable_store = WearableStateStore(self.data_dir)
+        self.wearable_history_store = WearableHistoryStore(self.data_dir)
 
     def _load_activity_events(self) -> list[dict]:
         try:
@@ -593,6 +594,10 @@ class Handler(BaseHTTPRequestHandler):
             if not self._require_token(): return
             device_id = qs.get("device_id", [DEFAULT_DEVICE])[0] or DEFAULT_DEVICE
             self._json(200, self.state.wearable_store.get(device_id)); return
+        if path == "/api/wearable/history":
+            if not self._require_token(): return
+            device_id = qs.get("device_id", [DEFAULT_DEVICE])[0] or DEFAULT_DEVICE
+            self._json(200, self.state.wearable_history_store.get(device_id)); return
         if path == "/api/device/state_lite":
             if not self._require_token(): return
             device_id = qs.get("device_id", [DEFAULT_DEVICE])[0] or DEFAULT_DEVICE
@@ -701,6 +706,25 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"ok": False, "error": "invalid_json_object"}); return
             device_id = str(data.get("device_id") or DEFAULT_DEVICE).strip()[:80] or DEFAULT_DEVICE
             self.state.wearable_store.put(data, device_id, now_iso())
+            self._json(200, {"ok": True, "device_id": device_id}); return
+        if path == "/api/wearable/history":
+            if not self._require_token(): return
+            try:
+                content_length = int(self.headers.get("Content-Length", 0) or 0)
+            except (TypeError, ValueError):
+                self._json(400, {"ok": False, "error": "invalid_json_object"}); return
+            if content_length <= 0:
+                self._json(400, {"ok": False, "error": "invalid_json_object"}); return
+            if content_length > MAX_WEARABLE_STATE_BYTES:
+                self._json(413, {"ok": False, "error": ERR_TOO_LARGE}); return
+            try:
+                data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                self._json(400, {"ok": False, "error": "invalid_json_object"}); return
+            if not isinstance(data, dict):
+                self._json(400, {"ok": False, "error": "invalid_json_object"}); return
+            device_id = str(data.get("device_id") or DEFAULT_DEVICE).strip()[:80] or DEFAULT_DEVICE
+            self.state.wearable_history_store.put(data, device_id, now_iso())
             self._json(200, {"ok": True, "device_id": device_id}); return
         if path == "/api/device/state_lite":
             if not self._require_token(): return

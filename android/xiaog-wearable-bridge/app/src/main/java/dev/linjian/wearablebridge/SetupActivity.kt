@@ -14,6 +14,7 @@ import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
+import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.work.Constraints
@@ -27,18 +28,28 @@ import java.util.concurrent.TimeUnit
 
 class SetupActivity : ComponentActivity() {
     private lateinit var statusView: TextView
+    private val stepsPermission = HealthPermission.getReadPermission(StepsRecord::class)
     private val dataPermissions = setOf(
-        HealthPermission.getReadPermission(StepsRecord::class),
+        stepsPermission,
         HealthPermission.getReadPermission(HeartRateRecord::class),
+        HealthPermission.getReadPermission(RestingHeartRateRecord::class),
         HealthPermission.getReadPermission(SleepSessionRecord::class),
         HealthPermission.getReadPermission(OxygenSaturationRecord::class)
     )
     private val permissionLauncher = registerForActivityResult(PermissionController.createRequestPermissionResultContract()) { granted ->
-        if (!granted.containsAll(dataPermissions)) {
-            statusView.text = "未获得全部数据读取权限，不会启动同步。缺失的数据不会被编造。"
+        if (stepsPermission !in granted) {
+            statusView.text = "未获得步数读取权限，不会启动同步。"
             return@registerForActivityResult
         }
-        scheduleSync(granted.contains(HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND))
+        val backgroundReadAvailable = HealthConnectClient.getOrCreate(this).features.getFeatureStatus(
+            HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND
+        ) == HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
+        val backgroundGranted = HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND in granted
+        if (backgroundReadAvailable && !backgroundGranted) {
+            statusView.text = "已获得步数读取权限，但 WorkManager 还需后台读取权限，暂未启动同步。"
+            return@registerForActivityResult
+        }
+        scheduleSync(backgroundGranted)
     }
     override fun onCreate(state: Bundle?) { super.onCreate(state); render() }
 

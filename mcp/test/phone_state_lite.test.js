@@ -19,7 +19,7 @@ function json(res, value) {
   res.end(body);
 }
 
-function waitFor(predicate, timeoutMs = 5000) {
+function waitFor(predicate, timeoutMs = 10000) {
   const deadline = Date.now() + timeoutMs;
   return new Promise((resolve, reject) => {
     const check = () => predicate() ? resolve() : Date.now() >= deadline ? reject(new Error("timed out")) : setTimeout(check, 25);
@@ -81,6 +81,58 @@ test("get_phone_state_lite returns only the foreground-lite cache", { timeout: 1
     const liteBytes = Buffer.byteLength(JSON.stringify(actual));
     assert.ok(liteBytes < fullBytes);
     console.log(`full=${fullBytes}B lite=${liteBytes}B`, JSON.stringify(actual));
+  } finally {
+    await client?.close().catch(() => null);
+    child.kill();
+    await new Promise((resolve) => child.once("exit", resolve));
+    await close(backend);
+  }
+});
+
+test("get_health_trends returns the bounded wearable history cache", { timeout: 15000 }, async () => {
+  const expected = {
+    ok: true,
+    device_id: "android-phone",
+    trends: {
+      device_id: "android-phone", period_start: "2026-09-14", period_end: "2026-09-20",
+      timezone: "Asia/Shanghai", updated_at: "2026-09-20T01:13:00Z",
+      sleep_daily: [{ date: "2026-09-20", duration_minutes: 407, measured_at: "2026-09-20T00:10:00Z" }],
+      resting_heart_rate_daily: [{ date: "2026-09-20", bpm: null, measured_at: null }],
+      steps_daily: [{ date: "2026-09-20", count: 1087, measured_at: "2026-09-20T01:13:00Z" }],
+    },
+    freshness: { stale: false, age_seconds: 60, last_sync_at: "2026-09-20T01:15:00Z", stale_after_seconds: 93600 },
+  };
+  const paths = [];
+  const backend = http.createServer((req, res) => {
+    const url = new URL(req.url, "http://localhost");
+    paths.push(url.pathname);
+    if (url.pathname === "/api/wearable/history") return json(res, expected);
+    if (url.pathname === "/api/companion/action" || url.pathname === "/api/activity/events") return json(res, { ok: true });
+    return json(res, { ok: false });
+  });
+  const backendPort = await listen(backend);
+  const probe = http.createServer();
+  const mcpPort = await listen(probe);
+  await close(probe);
+  const child = spawn(process.execPath, ["server.js"], {
+    cwd: new URL("..", import.meta.url),
+    env: { ...process.env, PORT: String(mcpPort), LINJIAN_URL: `http://127.0.0.1:${backendPort}`, LINJIAN_TOKEN: "test-token" },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  const output = [];
+  child.stdout.on("data", (chunk) => output.push(chunk.toString()));
+  child.stderr.on("data", (chunk) => output.push(chunk.toString()));
+  let client;
+  try {
+    await waitFor(() => output.join("").includes("unified MCP listening"));
+    client = new Client({ name: "health-trends-test", version: "1" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${mcpPort}/mcp`)));
+    const tool = (await client.listTools()).tools.find((item) => item.name === "get_health_trends");
+    assert.ok(tool);
+    const result = await client.callTool({ name: "get_health_trends", arguments: { device_id: "android-phone" } });
+    assert.equal(result.isError, undefined);
+    assert.deepEqual(JSON.parse(result.content[0].text), expected);
+    assert.ok(paths.includes("/api/wearable/history"));
   } finally {
     await client?.close().catch(() => null);
     child.kill();

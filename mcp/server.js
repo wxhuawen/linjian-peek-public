@@ -159,6 +159,7 @@ const COMPANION_ACTION_META = {
   get_guidian_state: ["观察", "查看归电状态", "确认最近回来与归电节奏"],
   get_senses_state: ["观察", "查看通用状态", "确认生活状态与归电节奏"],
   get_wearable_state: ["观察", "查看手环状态", "确认步数、心率、睡眠与血氧"],
+  get_health_trends: ["观察", "查看健康趋势", "回顾最近睡眠、静息心率与步数变化"],
   get_screen_break_state: ["观察", "查看应用门禁状态", "确认应用门禁与休息状态"],
   get_lock_state: ["观察", "查看应用门禁状态", "确认应用门禁与休息状态"],
   get_focus_status: ["观察", "查看专注模式", "确认全机专注状态和留言"],
@@ -1248,6 +1249,17 @@ function makeServer() {
       return textResult(data);
     } catch (error) {
       return textResult({ ok: false, device_id, error: "wearable_state_fetch_failed", message: "读取手环状态超时或掌心窗后端暂时不可达。", detail: String(error?.message || error).slice(0, 300) });
+    }
+  });
+
+  server.tool("get_health_trends", "读取掌心窗缓存的健康趋势：最近 7 天每日睡眠时长、最近 7 天每日静息心率、过去 3 天每日步数。只读；未授权或无记录的日期保持 null。", { device_id: z.string().default(DEFAULT_DEVICE) }, async ({ device_id = DEFAULT_DEVICE }) => {
+    try {
+      const res = await linjianFetch(`/api/wearable/history?device_id=${encodeURIComponent(device_id)}`, { timeout_ms: QUICK_FETCH_TIMEOUT_MS });
+      const data = await res.json();
+      postCompanionAction("get_health_trends", { device_id }).catch(() => null);
+      return textResult(data);
+    } catch (error) {
+      return textResult({ ok: false, device_id, error: "health_trends_fetch_failed", message: "读取健康趋势超时或掌心窗后端暂时不可达。", detail: String(error?.message || error).slice(0, 300) });
     }
   });
 

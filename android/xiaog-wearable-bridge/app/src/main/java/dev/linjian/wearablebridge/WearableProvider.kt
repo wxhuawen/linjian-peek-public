@@ -11,3 +11,17 @@ data class WearableSnapshot(
 )
 
 data class SleepSnapshot(val durationMinutes: Long?, val startAt: String?, val endAt: String?, val measuredAt: String?)
+
+data class DailySleepTrend(val date: String, val durationMinutes: Long?, val measuredAt: String?)
+data class DailyRestingHeartRateTrend(val date: String, val bpm: Long?, val measuredAt: String?)
+data class DailyStepsTrend(val date: String, val count: Long?, val measuredAt: String?)
+
+data class HealthTrendsSnapshot(
+    val periodStart: String,
+    val periodEnd: String,
+    val timeZone: String,
+    val updatedAt: String?,
+    val sleepDaily: List<DailySleepTrend>,
+    val restingHeartRateDaily: List<DailyRestingHeartRateTrend>,
+    val stepsDaily: List<DailyStepsTrend>
+)
